@@ -23,6 +23,10 @@
     showHinge: false,
     yearMin: null, yearMax: null,
     fullYearMin: null, fullYearMax: null,
+    timeMode: "cumulative",       // cumulative | window
+    windowWidth: 5,
+    playing: false, playSpeed: 550,
+    tlCounts: [], tlMax: 1,
     search: "",
     selected: null,
     lastGraph: null,
@@ -37,10 +41,14 @@
    "adv", "adv-toggle", "seg-link", "seg-pivot", "seg-color", "seg-labels",
    "size-by", "layout-sel", "display-mode", "rail-foot",
    "yr-min", "yr-max", "yr-lo", "yr-hi", "yr-reset", "timewrap",
+   "tl", "tl-hist", "tl-window", "tl-play", "tl-speed",
+   "seg-timemode", "ctrl-window", "window-width", "window-width-val",
    "export-btn", "share-btn", "detail", "dhead", "d-title", "d-sub", "dbody", "dclose",
    "statusline",
    "export-overlay", "exp-scope", "exp-hops", "exp-format", "exp-dim", "exp-labels",
-   "exp-image", "exp-close", "exp-status"
+   "exp-image", "exp-close", "exp-status",
+   "snapshots-btn", "snapshots-overlay", "snap-close", "snap-interval",
+   "snap-cumulative", "snap-status", "snap-grid"
   ].forEach((id) => { el[id] = $(id); });
 
   // ------------------------------------------------------------------ API
@@ -173,7 +181,10 @@
         onSelect: selectNode, onBackground: deselect,
       });
       window.__netInit = true;
-      window.addEventListener("resize", () => NetView.resize());
+      window.addEventListener("resize", () => {
+        NetView.resize();
+        if (State.fullYearMin != null) { drawHistogram(); positionWindow(); }
+      });
     }
 
     buildPivotList();
@@ -231,27 +242,158 @@
   }
 
   // --------------------------------------------------------------- timeline
-  function buildTimeline() {
+  const TL_PAD = 7;                 // demi-largeur de poignée (alignement frise ↔ poignées)
+  let refreshTimer = null;
+
+  async function buildTimeline() {
     if (State.fullYearMin == null) { el["timewrap"].style.display = "none"; return; }
     el["timewrap"].style.display = "";
+    // Histogramme : compte d'ouvrages par année (graphe maître).
+    try {
+      const tl = await getJSON(`/timeline?session_id=${State.sessionId}`);
+      State.tlCounts = tl.counts || [];
+      State.tlMax = Math.max(1, ...State.tlCounts.map((c) => c.count));
+    } catch (e) { State.tlCounts = []; State.tlMax = 1; }
+
     [el["yr-min"], el["yr-max"]].forEach((s) => { s.min = State.fullYearMin; s.max = State.fullYearMax; });
-    el["yr-min"].value = State.fullYearMin; el["yr-max"].value = State.fullYearMax;
-    updateYearLabels();
-    let t = null;
-    const onInput = () => {
-      let lo = +el["yr-min"].value, hi = +el["yr-max"].value;
-      if (lo > hi) { if (document.activeElement === el["yr-min"]) hi = lo; else lo = hi; el["yr-min"].value = lo; el["yr-max"].value = hi; }
-      State.yearMin = lo; State.yearMax = hi; updateYearLabels();
-      clearTimeout(t); t = setTimeout(() => refreshGraph(), 140);
+    applyRange(State.fullYearMin, State.fullYearMax, "none");
+
+    // Poignées (réglage fin)
+    el["yr-min"].oninput = () => {
+      if (State.timeMode === "window") return applyWindowStart(+el["yr-min"].value, "debounced");
+      applyRange(+el["yr-min"].value, State.yearMax, "debounced", "min");
     };
-    el["yr-min"].oninput = onInput; el["yr-max"].oninput = onInput;
-    el["yr-reset"].onclick = () => {
-      State.yearMin = State.fullYearMin; State.yearMax = State.fullYearMax;
-      el["yr-min"].value = State.fullYearMin; el["yr-max"].value = State.fullYearMax;
-      updateYearLabels(); refreshGraph();
-    };
+    el["yr-max"].oninput = () => applyRange(State.yearMin, +el["yr-max"].value, "debounced", "max");
+
+    setupBrush();
+    el["yr-reset"].onclick = () => { stopPlay(); applyRange(State.fullYearMin, State.fullYearMax, "now"); };
+    requestAnimationFrame(drawHistogram);   // attend la mise en page pour la largeur réelle
   }
-  function updateYearLabels() { el["yr-lo"].textContent = State.yearMin; el["yr-hi"].textContent = State.yearMax; }
+
+  // --- cœur : applique une plage [lo,hi], met à jour UI + (éventuellement) la carte
+  function applyRange(lo, hi, refresh, anchor) {
+    lo = clamp(lo, State.fullYearMin, State.fullYearMax);
+    hi = clamp(hi, State.fullYearMin, State.fullYearMax);
+    if (lo > hi) { if (anchor === "min") hi = lo; else if (anchor === "max") lo = hi; else [lo, hi] = [hi, lo]; }
+    State.yearMin = lo; State.yearMax = hi;
+    el["yr-min"].value = lo; el["yr-max"].value = hi;
+    el["yr-lo"].textContent = lo; el["yr-hi"].textContent = hi;
+    drawHistogram(); positionWindow();
+    if (refresh === "now") refreshGraph();
+    else if (refresh === "debounced") { clearTimeout(refreshTimer); refreshTimer = setTimeout(() => refreshGraph(), 130); }
+  }
+  function applyWindowStart(start, refresh) {
+    const w = State.windowWidth;
+    start = clamp(start, State.fullYearMin, State.fullYearMax - w + 1);
+    applyRange(start, start + w - 1, refresh, "min");
+  }
+
+  function tlWidth() { return el["tl"].clientWidth || 240; }
+  function yearToX(y) {
+    const span = (State.fullYearMax - State.fullYearMin) || 1;
+    return TL_PAD + ((y - State.fullYearMin) / span) * (tlWidth() - 2 * TL_PAD);
+  }
+  function xToYear(x) {
+    const span = (State.fullYearMax - State.fullYearMin) || 1;
+    const frac = clamp((x - TL_PAD) / (tlWidth() - 2 * TL_PAD), 0, 1);
+    return Math.round(State.fullYearMin + frac * span);
+  }
+
+  function positionWindow() {
+    const x0 = yearToX(State.yearMin), x1 = yearToX(State.yearMax);
+    el["tl-window"].style.left = x0 + "px";
+    el["tl-window"].style.width = Math.max(2, x1 - x0) + "px";
+  }
+
+  function drawHistogram() {
+    const cv = el["tl-hist"]; if (!cv) return;
+    const W = tlWidth(), H = 32, dpr = window.devicePixelRatio || 1;
+    cv.width = W * dpr; cv.height = H * dpr;
+    cv.style.width = W + "px"; cv.style.height = H + "px";
+    const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    const span = (State.fullYearMax - State.fullYearMin) || 1;
+    const bw = Math.max(2, ((W - 2 * TL_PAD) / (span + 1)) * 0.78);
+    State.tlCounts.forEach((c) => {
+      const x = yearToX(c.year), h = (c.count / State.tlMax) * (H - 4);
+      const inRange = c.year >= State.yearMin && c.year <= State.yearMax;
+      g.fillStyle = inRange ? "#C07A1A" : "#E0DBD0";
+      g.fillRect(x - bw / 2, H - h, bw, h);
+    });
+  }
+
+  // --- brush : cliquer/glisser sur la frise ajuste la plage (la piste laisse passer
+  //     les events, seules les poignées capturent — voir CSS pointer-events)
+  function setupBrush() {
+    let anchorYear = null;
+    const down = (e) => {
+      if (e.target.tagName === "INPUT") return;     // une poignée : laisser le natif gérer
+      stopPlay();
+      anchorYear = xToYear(e.clientX - el["tl"].getBoundingClientRect().left);
+      if (State.timeMode === "window") applyWindowStart(anchorYear, "debounced");
+      else applyRange(anchorYear, anchorYear, "debounced");
+      window.addEventListener("mousemove", move);
+      window.addEventListener("mouseup", up);
+      e.preventDefault();
+    };
+    const move = (e) => {
+      const y = xToYear(e.clientX - el["tl"].getBoundingClientRect().left);
+      if (State.timeMode === "window") applyWindowStart(y, "debounced");
+      else applyRange(Math.min(anchorYear, y), Math.max(anchorYear, y), "debounced");
+    };
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      refreshGraph();      // version « now » à la fin du geste
+    };
+    el["tl"].addEventListener("mousedown", down);
+  }
+
+  // --- modes cumulatif / fenêtre glissante
+  function setTimeMode(mode) {
+    State.timeMode = mode;
+    el["ctrl-window"].style.display = mode === "window" ? "" : "none";
+    el["tl"].classList.toggle("window-mode", mode === "window");
+    if (mode === "window") applyWindowStart(State.yearMin, "now");
+    else applyRange(State.yearMin, State.fullYearMax, "now");
+  }
+
+  // --- lecture animée
+  function togglePlay() { State.playing ? stopPlay() : startPlay(); }
+  function startPlay() {
+    if (State.fullYearMin == null) return;
+    State.playing = true;
+    el["tl-play"].textContent = "⏸"; el["tl-play"].classList.add("playing");
+    // (re)part du début si on est déjà au bout
+    if (State.timeMode === "window") {
+      if (State.yearMin + State.windowWidth - 1 >= State.fullYearMax) applyWindowStart(State.fullYearMin, "none");
+    } else if (State.yearMax >= State.fullYearMax) {
+      applyRange(State.yearMin, State.yearMin, "none");
+    }
+    playFrame();
+  }
+  function stopPlay() {
+    State.playing = false;
+    el["tl-play"].textContent = "▶"; el["tl-play"].classList.remove("playing");
+  }
+  async function playFrame() {
+    if (!State.playing) return;
+    await refreshGraph();
+    if (!State.playing) return;
+    await sleep(State.playSpeed);
+    if (!State.playing) return;
+    advanceTime();
+    playFrame();
+  }
+  function advanceTime() {
+    if (State.timeMode === "window") {
+      const last = State.yearMin + State.windowWidth - 1;
+      const next = last >= State.fullYearMax ? State.fullYearMin : State.yearMin + 1;
+      applyWindowStart(next, "none");
+    } else {
+      const next = State.yearMax >= State.fullYearMax ? State.yearMin : State.yearMax + 1;
+      applyRange(State.yearMin, next, "none");
+    }
+  }
 
   // ----------------------------------------------------- options avancées (segs)
   function wireSeg(segEl, apply) {
@@ -273,7 +415,17 @@
     el["dclose"].addEventListener("click", deselect);
     el["share-btn"].addEventListener("click", shareStub);
     el["export-btn"].addEventListener("click", () => el["export-overlay"].classList.remove("hidden"));
+    // contrôles temporels
+    wireSeg(el["seg-timemode"], setTimeMode);
+    el["window-width"].addEventListener("input", (e) => {
+      State.windowWidth = +e.target.value; el["window-width-val"].textContent = e.target.value;
+      if (State.timeMode === "window") applyWindowStart(State.yearMin, "now");
+    });
+    el["tl-play"].addEventListener("click", togglePlay);
+    el["tl-speed"].addEventListener("change", (e) => { State.playSpeed = +e.target.value; });
+    el["snapshots-btn"].addEventListener("click", openSnapshots);
     initExport();
+    initSnapshots();
   }
 
   // ---------------------------------------------------------- rafraîchir la carte
@@ -413,6 +565,116 @@
     setTimeout(() => URL.revokeObjectURL(url), 1500);
   }
 
+  // ----------------------------------------- instantanés (petits multiples)
+  let snapPanels = [];
+
+  function initSnapshots() {
+    el["snap-close"].addEventListener("click", () => el["snapshots-overlay"].classList.add("hidden"));
+    el["snap-interval"].addEventListener("change", buildSnapshots);
+    el["snap-cumulative"].addEventListener("change", buildSnapshots);
+    document.querySelectorAll("[data-snapexp]").forEach((b) =>
+      b.addEventListener("click", () => exportSnapshots(b.dataset.snapexp)));
+  }
+
+  function openSnapshots() {
+    if (State.fullYearMin == null) { flash("Pas de dimension temporelle dans ces données."); return; }
+    stopPlay();
+    el["snapshots-overlay"].classList.remove("hidden");
+    buildSnapshots();
+  }
+
+  function computePeriods() {
+    const lo = State.fullYearMin, hi = State.fullYearMax, iv = +el["snap-interval"].value;
+    const periods = [];
+    if (iv > 0) {
+      for (let a = Math.floor(lo / iv) * iv; a <= hi; a += iv) {
+        const s = Math.max(a, lo), e = Math.min(a + iv - 1, hi);
+        if (e >= lo) periods.push([s, e]);
+      }
+    } else {
+      const k = Math.min(8, Math.max(2, hi - lo)), step = (hi - lo + 1) / k;
+      for (let i = 0; i < k; i++) {
+        const s = Math.round(lo + i * step);
+        const e = i === k - 1 ? hi : Math.round(lo + (i + 1) * step) - 1;
+        if (e >= s) periods.push([s, e]);
+      }
+    }
+    return periods;
+  }
+
+  function sumWorks(lo, hi) {
+    return State.tlCounts.filter((c) => c.year >= lo && c.year <= hi).reduce((s, c) => s + c.count, 0);
+  }
+
+  async function buildSnapshots() {
+    const cumulative = el["snap-cumulative"].checked;
+    const periods = computePeriods();
+    el["snap-status"].innerHTML = `<span class="spinner"></span> Calcul…`;
+    el["snap-grid"].innerHTML = "";
+    const positions = NetView.getPositions();
+    const px = Object.values(positions).map((p) => p.x), py = Object.values(positions).map((p) => p.y);
+    const bounds = px.length
+      ? { minx: Math.min(...px), maxx: Math.max(...px), miny: Math.min(...py), maxy: Math.max(...py) }
+      : { minx: -1, maxx: 1, miny: -1, maxy: 1 };
+    snapPanels = [];
+    for (const [a, b] of periods) {
+      const lo = cumulative ? State.fullYearMin : a;
+      const p = new URLSearchParams({
+        session_id: State.sessionId, layers: [...State.layersOn].join(","),
+        link_mode: State.linkMode, show_hinge: State.showHinge,
+        color_by: State.colorBy, size_by: State.sizeBy, year_min: lo, year_max: b,
+      });
+      let data;
+      try { data = await getJSON("/graph?" + p.toString()); } catch (e) { continue; }
+      const nodes = data.nodes.map((n) => {
+        const pos = positions[n.id] || { x: n.x, y: n.y };
+        return { id: n.id, label: n.label, color: n.color, size: n.size, x: pos.x, y: pos.y };
+      });
+      const title = cumulative ? `≤ ${b}` : (a === b ? `${a}` : `${a}–${b}`);
+      const panel = { title, count: sumWorks(lo, b), nodes, edges: data.edges };
+      snapPanels.push(panel);
+      el["snap-grid"].appendChild(snapCell(panel, bounds));
+    }
+    el["snap-status"].textContent = snapPanels.length
+      ? `${snapPanels.length} instantanés · mêmes positions` : "Aucune période";
+  }
+
+  function snapCell(panel, b) {
+    const cell = document.createElement("div"); cell.className = "snap-cell";
+    const W = (b.maxx - b.minx) || 2, H = (b.maxy - b.miny) || 2, ext = Math.max(W, H);
+    const pad = ext * 0.07 + 0.5;
+    const vb = `${b.minx - pad} ${-(b.maxy + pad)} ${W + 2 * pad} ${H + 2 * pad}`; // axe y inversé (SVG)
+    const pos = {}; panel.nodes.forEach((n) => { pos[n.id] = { x: n.x, y: -n.y }; });
+    const lw = ext * 0.0016;
+    let svg = "";
+    panel.edges.forEach((e) => {
+      const s = pos[e.source], t = pos[e.target];
+      if (s && t) svg += `<line x1="${s.x}" y1="${s.y}" x2="${t.x}" y2="${t.y}" stroke="#CFC9BD" stroke-width="${lw}"/>`;
+    });
+    panel.nodes.forEach((n) => {
+      const r = ext * (0.007 + 0.013 * (n.size / 22));
+      svg += `<circle cx="${pos[n.id].x}" cy="${pos[n.id].y}" r="${r}" fill="${n.color}" stroke="#fff" stroke-width="${r * 0.2}"/>`;
+    });
+    cell.innerHTML =
+      `<div class="cap"><span class="per">${esc(panel.title)}</span><span class="cnt">${panel.count} ouvrage${panel.count > 1 ? "s" : ""}</span></div>` +
+      `<svg viewBox="${vb}" preserveAspectRatio="xMidYMid meet" style="aspect-ratio:${(W + 2 * pad) / (H + 2 * pad)}">${svg}</svg>`;
+    return cell;
+  }
+
+  async function exportSnapshots(fmt) {
+    if (!snapPanels.length) { el["snap-status"].textContent = "Rien à exporter."; return; }
+    el["snap-status"].innerHTML = `<span class="spinner"></span> Export…`;
+    try {
+      const res = await api("/export", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: State.sessionId, kind: "small_multiples",
+          format: fmt, title: `Instantanés — ${State.filename}`, panels: snapPanels }),
+      });
+      downloadBlob(await res.blob(), `instantanes.${fmt}`);
+      el["snap-status"].textContent = "Téléchargé ✓";
+    } catch (e) { el["snap-status"].textContent = "Échec : " + e.message; }
+  }
+
   // ------------------------------------------------------------------ divers
   function shareStub() {
     flash("Partage : fonctionnalité de démonstration (lien non généré).");
@@ -423,6 +685,8 @@
     clearTimeout(flashT); flashT = setTimeout(() => { el["statusline"].textContent = NetView.getMetrics().nodes + " nœuds · " + NetView.getMetrics().edges + " liens"; }, 2600);
   }
   function esc(s) { const d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+  function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
   // ------------------------------------------------------------------ boot
   initUpload();

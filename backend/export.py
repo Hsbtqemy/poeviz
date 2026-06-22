@@ -97,6 +97,71 @@ def render_image(nodes: list[dict[str, Any]], edges: list[dict[str, Any]],
     return buf.getvalue(), ctype
 
 
+def render_small_multiples(panels: list[dict[str, Any]], fmt: str = "png",
+                           title: str | None = None) -> tuple[bytes, str]:
+    """Grille d'instantanés (petits multiples) : un mini-réseau par période, mêmes
+    positions de nœuds et mêmes limites d'axes d'une vignette à l'autre, pour
+    comparer les époques côte à côte. Exporte en PNG 300 DPI ou SVG."""
+    import math
+    panels = [p for p in panels if p.get("nodes")]
+    if not panels:
+        raise ValueError("Aucun instantané à exporter.")
+
+    # Limites communes à toutes les vignettes (positions partagées).
+    xs = [n["x"] for p in panels for n in p["nodes"]]
+    ys = [n["y"] for p in panels for n in p["nodes"]]
+    mx = (max(xs) - min(xs)) * 0.08 + 0.5
+    my = (max(ys) - min(ys)) * 0.08 + 0.5
+    xlim = (min(xs) - mx, max(xs) + mx)
+    ylim = (min(ys) - my, max(ys) + my)
+
+    n = len(panels)
+    ncols = min(4, max(1, math.ceil(math.sqrt(n))))
+    nrows = math.ceil(n / ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 3.1, nrows * 2.7))
+    fig.patch.set_facecolor(PAPER)
+    axes = (axes.flatten() if hasattr(axes, "flatten") else [axes])
+
+    for ax, panel in zip(axes, panels):
+        ax.set_facecolor(PAPER)
+        pos = {nd["id"]: (nd["x"], nd["y"]) for nd in panel["nodes"]}
+        for e in panel.get("edges", []):
+            if e["source"] in pos and e["target"] in pos:
+                x0, y0 = pos[e["source"]]; x1, y1 = pos[e["target"]]
+                ax.plot([x0, x1], [y0, y1], color=EDGE_COLOR, linewidth=0.5, zorder=1)
+        ax.scatter([n["x"] for n in panel["nodes"]], [n["y"] for n in panel["nodes"]],
+                   s=[(float(n.get("size", 6)) ** 2) * 0.55 for n in panel["nodes"]],
+                   c=[n.get("color", "#7B5BD6") for n in panel["nodes"]],
+                   edgecolors="white", linewidths=0.5, zorder=2)
+        ax.set_xlim(*xlim); ax.set_ylim(*ylim)
+        ax.set_aspect("equal", adjustable="box")
+        ax.set_xticks([]); ax.set_yticks([])
+        for s in ax.spines.values():
+            s.set_color("#E0DBD0")
+        cnt = panel.get("count")
+        sub = f"  ({cnt} ouvrage{'s' if (cnt or 0) > 1 else ''})" if cnt is not None else ""
+        ax.set_title(str(panel.get("title", "")) + sub, color=INK, fontsize=9, loc="left")
+
+    for ax in axes[n:]:
+        ax.axis("off")
+    if title:
+        fig.suptitle(title, color=INK, fontsize=12, x=0.02, ha="left")
+    fig.tight_layout(pad=0.6)
+
+    buf = io.BytesIO()
+    fmt = fmt.lower()
+    if fmt == "png":
+        fig.savefig(buf, format="png", dpi=300, facecolor=PAPER, bbox_inches="tight"); ctype = "image/png"
+    elif fmt == "svg":
+        fig.savefig(buf, format="svg", facecolor=PAPER, bbox_inches="tight"); ctype = "image/svg+xml"
+    elif fmt == "pdf":
+        fig.savefig(buf, format="pdf", facecolor=PAPER, bbox_inches="tight"); ctype = "application/pdf"
+    else:
+        plt.close(fig); raise ValueError(f"Format non supporté : {fmt}")
+    plt.close(fig)
+    return buf.getvalue(), ctype
+
+
 def _labelled_nodes(nodes: list[dict], labels: str) -> list[dict]:
     if labels == "none":
         return []

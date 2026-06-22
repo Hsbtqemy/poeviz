@@ -80,6 +80,10 @@ Puis ouvrez **http://127.0.0.1:8000/**. Le même serveur sert l'API *et* le fron
 | **Disposition** | force (galaxie) / circulaire / dispersée |
 | **Affichage** | *automatique* (points → étiquettes → cartes selon le zoom), *toujours points*, *toujours cartes* — plus **épinglage** d'une carte sur un nœud |
 | **Curseur temporel** | ne montre que les ouvrages (et entités/liens dérivés) dans la plage d'années — les positions restent stables |
+| **Frise / histogramme** | sous le curseur, le nombre d'ouvrages par année ; cliquer/glisser dessus ajuste la plage |
+| **Lecture animée** | bouton ▶ qui balaie le temps (play / pause / vitesse) — le réseau se construit année après année, sans recalcul des positions |
+| **Filtre temporel** | *cumulatif* (borne basse + borne haute libres) ou *fenêtre glissante* (tranche de largeur fixe qu'on fait défiler — combinée à la lecture animée) |
+| **Instantanés** | une grille de mini-réseaux à des périodes successives (mêmes positions de nœuds) pour comparer les époques — exportable en PNG 300 DPI + SVG |
 
 **Niveaux de détail** : dézoomé = points colorés ; zoom intermédiaire = points +
 étiquettes ; zoom rapproché = petites **cartes** (titre + 2-3 infos).

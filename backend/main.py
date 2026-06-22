@@ -85,6 +85,7 @@ class ExportBody(BaseModel):
     labels: str = "pivots"
     title: str | None = None
     view: dict[str, Any] = {}      # {nodes:[...], edges:[...]} envoyés par le front
+    panels: list[dict[str, Any]] | None = None   # petits multiples : une vue par période
 
 
 # --------------------------------------------------------------------------
@@ -272,6 +273,25 @@ def get_graph(
     return build_view(session, params, color_by=color_by, size_by=size_by)
 
 
+@app.get("/timeline")
+def timeline(session_id: str) -> dict[str, Any]:
+    """Compte d'ouvrages par année sur le graphe MAÎTRE (indépendant des filtres
+    de couches) — pour l'histogramme/frise sous le curseur temporel."""
+    session = get_session(session_id)
+    require_master(session)
+    counts: dict[int, int] = {}
+    for _, d in session.master.nodes(data=True):
+        if d.get("kind") == "work":
+            y = d.get("year")
+            if y is not None:
+                counts[y] = counts.get(y, 0) + 1
+    return {
+        "year_min": session.meta.year_min,
+        "year_max": session.meta.year_max,
+        "counts": [{"year": y, "count": counts[y]} for y in sorted(counts)],
+    }
+
+
 @app.get("/node/{node_id:path}")
 def get_node(
     node_id: str,
@@ -311,12 +331,16 @@ def post_export(body: ExportBody):
     require_master(session)
     nodes = body.view.get("nodes", [])
     edges = body.view.get("edges", [])
-    if not nodes:
+    kind = body.kind
+    if kind != "small_multiples" and not nodes:
         raise HTTPException(400, "Rien à exporter : la vue est vide.")
 
-    kind = body.kind
     try:
-        if kind == "image":
+        if kind == "small_multiples":
+            data, ctype = export.render_small_multiples(
+                body.panels or [], fmt=body.format, title=body.title)
+            ext = body.format.lower()
+        elif kind == "image":
             data, ctype = export.render_image(
                 nodes, edges, fmt=body.format, dimensions=body.dimensions,
                 labels=body.labels, title=body.title)

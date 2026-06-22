@@ -378,9 +378,15 @@
   function rgbToHex(c) { return "#" + c.map((v) => v.toString(16).padStart(2, "0")).join(""); }
   function escapeHtml(s) { const d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }
 
+  function getPositions() {
+    const out = {};
+    graph.forEachNode((id, a) => { out[id] = { x: a.x, y: a.y }; });
+    return out;
+  }
+
   window.NetView = {
     init, render, setHighlight, setFocus, applySearch, centerOnNodes,
-    setLabelsDensity, setDisplayMode, resize,
+    setLabelsDensity, setDisplayMode, resize, getPositions,
     getViewNodes, getViewEdges, neighborhood,
     getMetrics: () => ({ nodes: graph ? graph.order : 0, edges: graph ? graph.size : 0 }),
     // Hook de test (e2e) : déclenche la sélection comme un clic sur le nœud.

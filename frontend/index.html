@@ -125,6 +125,16 @@
             <option value="random">Dispersée</option>
           </select>
         </div>
+        <div class="ctrl">
+          <label>Filtre temporel</label>
+          <div class="seg" id="seg-timemode">
+            <span data-v="cumulative" class="on">cumulatif</span><span data-v="window">fenêtre glissante</span>
+          </div>
+        </div>
+        <div class="ctrl" id="ctrl-window" style="display:none">
+          <label>Largeur de la fenêtre (années) : <b id="window-width-val">5</b></label>
+          <input type="range" id="window-width" min="1" max="50" value="5" style="width:100%;accent-color:var(--sel)">
+        </div>
       </div>
     </div>
     <div style="margin-top:auto;font-size:10.5px;color:var(--muted)" class="sans" id="rail-foot"></div>
@@ -134,8 +144,18 @@
   <main class="canvas">
     <div class="topbar">
       <div class="timewrap" id="timewrap">
+        <button class="tl-play" id="tl-play" title="Lecture animée (balaie le temps)">▶</button>
+        <select id="tl-speed" class="tl-speed" title="Vitesse de lecture">
+          <option value="1000">Lent</option>
+          <option value="550" selected>Moyen</option>
+          <option value="250">Rapide</option>
+        </select>
         <b id="yr-lo">—</b>
-        <span class="sliders"><input type="range" id="yr-min"><input type="range" id="yr-max"></span>
+        <div class="tl" id="tl" title="Cliquez ou glissez pour choisir la plage d'années">
+          <canvas id="tl-hist"></canvas>
+          <div class="tl-window" id="tl-window"></div>
+          <input type="range" id="yr-min"><input type="range" id="yr-max">
+        </div>
         <b id="yr-hi">—</b>
         <span id="yr-reset" style="cursor:pointer;text-decoration:underline">tout</span>
       </div>
@@ -143,6 +163,7 @@
         <span class="modepick" id="display-mode" title="Affichage des nœuds">
           <span data-v="auto" class="on">auto</span><span data-v="points">points</span><span data-v="cards">cartes</span>
         </span>
+        <button class="btn" id="snapshots-btn" title="Grille d'instantanés par période">Instantanés</button>
         <button class="btn" id="export-btn">Exporter</button>
         <button class="btn primary" id="share-btn">Partager</button>
       </div>
@@ -208,6 +229,36 @@
       <span class="sans" style="font-size:12px;color:var(--muted)" id="exp-status"></span>
       <button class="btn" id="exp-close">Fermer</button>
     </div>
+  </div>
+</div>
+
+<!-- ===================== Vue « instantanés » (petits multiples) ===================== -->
+<div id="snapshots-overlay" class="overlay hidden">
+  <div class="modal snapshots-modal">
+    <div class="snap-head">
+      <div>
+        <h2>Instantanés dans le temps</h2>
+        <div class="sub">Le réseau à des périodes successives, mêmes positions de nœuds — pour comparer les époques.</div>
+      </div>
+      <button class="dclose" id="snap-close" style="position:static;color:var(--ink)">✕</button>
+    </div>
+    <div class="snap-bar">
+      <span class="sans" style="font-size:12px;color:var(--muted)">Intervalle</span>
+      <select id="snap-interval">
+        <option value="5">5 ans</option>
+        <option value="10" selected>Décennie</option>
+        <option value="20">20 ans</option>
+        <option value="0">Périodes égales (auto)</option>
+      </select>
+      <label class="sans" style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="snap-cumulative"> cumulatif (du début à chaque date)
+      </label>
+      <span style="flex:1"></span>
+      <span class="sans" style="font-size:12px;color:var(--muted)" id="snap-status"></span>
+      <button class="btn" data-snapexp="png">Export PNG</button>
+      <button class="btn" data-snapexp="svg">Export SVG</button>
+    </div>
+    <div class="snap-grid" id="snap-grid"></div>
   </div>
 </div>
 
