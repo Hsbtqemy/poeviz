@@ -1,2 +1,217 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Cartographie</title></head>
-<body><p>Placeholder — le frontend complet arrive à l'étape 6.</p></body></html>
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cartographie interactive de métadonnées</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%231D8A68'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ===================== Écran 1 : dépôt du fichier ===================== -->
+<div id="upload-screen" class="screen">
+  <div class="dropcard">
+    <div class="logo"></div>
+    <h1>Cartographie de métadonnées</h1>
+    <p>Transformez un tableur Excel (livres, parutions, traductions) en un réseau d'entités explorable.</p>
+    <label class="dropzone" id="dropzone">
+      <div class="big">Déposez un fichier .xlsx pour commencer</div>
+      <div class="small">ou cliquez pour parcourir — auteurs, traducteurs, éditeurs, langues, lieux…</div>
+      <input type="file" id="file-input" accept=".xlsx,.xlsm" hidden>
+    </label>
+    <div class="row-btns">
+      <button class="btn" id="demo-btn">Charger le fichier de démonstration</button>
+    </div>
+    <div class="err" id="upload-err"></div>
+  </div>
+</div>
+
+<!-- ===================== Écran 2 : configuration des rôles ===================== -->
+<div id="roles-overlay" class="overlay hidden">
+  <div class="modal">
+    <h2>Configuration de la cartographie</h2>
+    <div class="sub">Chaque colonne de votre tableur reçoit un rôle. Vous pouvez en changer à tout moment.</div>
+    <div class="legend">
+      <span><span class="chip" style="background:var(--role-node)"></span>Nœud — entité affichée dans le réseau</span>
+      <span><span class="chip" style="background:var(--role-edge)"></span>Lien — relie les nœuds entre eux</span>
+      <span><span class="chip" style="background:var(--role-attr)"></span>Info — s'affiche dans la fiche</span>
+      <span><span class="chip" style="background:#EFEDE7;border:1px solid var(--line)"></span>Ignoré</span>
+    </div>
+    <table class="roles-table">
+      <thead><tr><th>Colonne détectée</th><th>Valeurs uniques</th><th style="text-align:right">Rôle</th></tr></thead>
+      <tbody id="roles-body"></tbody>
+    </table>
+    <div class="hintbar" id="roles-hint"></div>
+    <div class="modal-actions">
+      <span class="sans" style="font-size:12px;color:var(--muted)" id="roles-status"></span>
+      <div>
+        <button class="btn" id="roles-cancel">Annuler</button>
+        <button class="btn accent" id="roles-build">Construire la carte →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== Écran 3 : application 3 zones ===================== -->
+<div id="app" class="app hidden">
+
+  <!-- Barre latérale gauche -->
+  <aside class="rail">
+    <div class="brand">
+      <span class="dot"></span>
+      <span>Cartographie<small id="brand-sub">—</small></span>
+    </div>
+
+    <div class="search"><input id="search" placeholder="Rechercher un nœud…"></div>
+
+    <div>
+      <div class="grp-label">Organiser autour de</div>
+      <div class="pivot" id="pivot-list"></div>
+    </div>
+
+    <div>
+      <div class="grp-label">Couches visibles <a id="reconfig">rôles…</a></div>
+      <div id="layers-list"></div>
+      <label class="layer off" id="hinge-layer" title="Afficher les ouvrages comme nœuds-charnières">
+        <span class="tog"></span><span class="sw" style="background:#8A857B"></span>Ouvrages (charnière)
+      </label>
+    </div>
+
+    <div class="adv" id="adv">
+      <div class="adv-toggle" id="adv-toggle"><span>Options avancées</span><span class="caret">›</span></div>
+      <div class="adv-body">
+        <div class="ctrl">
+          <label>Quand une couche est masquée, ses liens…</label>
+          <div class="seg" id="seg-link">
+            <span data-v="report" class="on">se reportent</span><span data-v="cut">se coupent</span>
+          </div>
+        </div>
+        <div class="ctrl">
+          <label>Effet du pivot</label>
+          <div class="seg" id="seg-pivot">
+            <span data-v="reorganize" class="on">réorganise</span><span data-v="filter">filtre seul</span>
+          </div>
+        </div>
+        <div class="ctrl">
+          <label>Couleur des nœuds</label>
+          <div class="seg" id="seg-color">
+            <span data-v="type" class="on">par type</span><span data-v="community">par communauté</span>
+          </div>
+        </div>
+        <div class="ctrl">
+          <label>Taille des nœuds (centralité)</label>
+          <select id="size-by">
+            <option value="degree">Degré (nb de liens)</option>
+            <option value="betweenness">Intermédiarité</option>
+            <option value="eigenvector">Vecteur propre</option>
+          </select>
+        </div>
+        <div class="ctrl">
+          <label>Densité des étiquettes</label>
+          <div class="seg" id="seg-labels">
+            <span data-v="all">toutes</span><span data-v="pivots" class="on">pivots</span><span data-v="none">aucune</span>
+          </div>
+        </div>
+        <div class="ctrl">
+          <label>Disposition</label>
+          <select id="layout-sel">
+            <option value="force">Force (galaxie)</option>
+            <option value="circular">Circulaire</option>
+            <option value="random">Dispersée</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:auto;font-size:10.5px;color:var(--muted)" class="sans" id="rail-foot"></div>
+  </aside>
+
+  <!-- Canvas central -->
+  <main class="canvas">
+    <div class="topbar">
+      <div class="timewrap" id="timewrap">
+        <b id="yr-lo">—</b>
+        <span class="sliders"><input type="range" id="yr-min"><input type="range" id="yr-max"></span>
+        <b id="yr-hi">—</b>
+        <span id="yr-reset" style="cursor:pointer;text-decoration:underline">tout</span>
+      </div>
+      <div class="actions">
+        <span class="modepick" id="display-mode" title="Affichage des nœuds">
+          <span data-v="auto" class="on">auto</span><span data-v="points">points</span><span data-v="cards">cartes</span>
+        </span>
+        <button class="btn" id="export-btn">Exporter</button>
+        <button class="btn primary" id="share-btn">Partager</button>
+      </div>
+    </div>
+
+    <div id="net">
+      <div id="sigma"></div>
+      <div id="cards"></div>
+      <div id="tooltip"></div>
+      <div class="statusline" id="statusline"></div>
+    </div>
+    <div class="hint">Cliquez un nœud pour son détail · molette pour zoomer · glissez le fond pour déplacer · glissez un nœud pour le repositionner</div>
+  </main>
+
+  <!-- Panneau de détail droit -->
+  <aside class="detail" id="detail">
+    <div class="dhead" id="dhead">
+      <button class="dclose" id="dclose">✕</button>
+      <h2 id="d-title">—</h2>
+      <p id="d-sub">—</p>
+    </div>
+    <div class="dbody" id="dbody"></div>
+  </aside>
+</div>
+
+<!-- ===================== Modale d'export ===================== -->
+<div id="export-overlay" class="overlay hidden">
+  <div class="modal export-modal">
+    <h2>Exporter la carte</h2>
+    <div class="sub">Image nette pour Word (PNG/SVG), ou données pour Gephi / tableur.</div>
+    <div class="exp-grid">
+      <div class="ctrl"><label>Périmètre</label>
+        <select id="exp-scope">
+          <option value="view">Vue courante (filtres actifs)</option>
+          <option value="neighbors">Voisinage du nœud sélectionné</option>
+        </select>
+      </div>
+      <div class="ctrl"><label>Sauts (voisinage)</label>
+        <select id="exp-hops"><option value="1">1 saut</option><option value="2">2 sauts</option></select>
+      </div>
+      <div class="ctrl"><label>Format image</label>
+        <select id="exp-format"><option value="png">PNG 300 DPI</option><option value="svg">SVG vectoriel</option><option value="pdf">PDF</option></select>
+      </div>
+      <div class="ctrl"><label>Dimensions</label>
+        <select id="exp-dim"><option value="pleine_page">Pleine page</option><option value="colonne">Colonne</option><option value="carre">Carré</option></select>
+      </div>
+      <div class="ctrl"><label>Étiquettes</label>
+        <select id="exp-labels"><option value="pivots">Pivots</option><option value="all">Toutes</option><option value="none">Aucune</option></select>
+      </div>
+      <div class="ctrl" style="display:flex;align-items:flex-end">
+        <button class="btn accent" id="exp-image" style="width:100%">Télécharger l'image</button>
+      </div>
+    </div>
+    <div class="exp-extra">
+      <div class="grp-label">Autres formats</div>
+      <button class="btn" data-exp="gexf">GEXF (Gephi)</button>
+      <button class="btn" data-exp="csv_nodes">CSV nœuds</button>
+      <button class="btn" data-exp="csv_edges">CSV arêtes</button>
+      <button class="btn" data-exp="metrics" data-fmt="csv">Métriques CSV</button>
+      <button class="btn" data-exp="metrics" data-fmt="xlsx">Métriques XLSX</button>
+    </div>
+    <div class="modal-actions">
+      <span class="sans" style="font-size:12px;color:var(--muted)" id="exp-status"></span>
+      <button class="btn" id="exp-close">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Librairies réseau (CDN, UMD) -->
+<script src="https://cdn.jsdelivr.net/npm/graphology@0.25.4/dist/graphology.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/graphology-library@0.8.0/dist/graphology-library.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sigma@3.0.3/dist/sigma.min.js"></script>
+<script src="render.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

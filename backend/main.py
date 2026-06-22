@@ -190,6 +190,23 @@ async def upload(file: UploadFile = File(...)) -> dict[str, Any]:
     }
 
 
+@app.get("/demo")
+def demo() -> dict[str, Any]:
+    """Charge le fichier de démonstration fourni dans une nouvelle session."""
+    demo_path = Path(__file__).resolve().parent.parent / "data" / "traductions_demo.xlsx"
+    if not demo_path.exists():
+        raise HTTPException(404, "Fichier de démonstration introuvable.")
+    dataset = ingest.read_workbook(demo_path.read_bytes())
+    session_id = uuid.uuid4().hex[:12]
+    SESSIONS[session_id] = Session(dataset=dataset)
+    return {
+        "session_id": session_id,
+        "sheets": dataset.sheets,
+        "active_sheet": dataset.active_sheet,
+        "filename": "traductions_demo.xlsx",
+    }
+
+
 @app.get("/profile")
 def profile(session_id: str, sheet: str | None = None) -> dict[str, Any]:
     session = get_session(session_id)
