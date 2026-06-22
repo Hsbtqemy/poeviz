@@ -65,13 +65,17 @@
 
     <div class="search"><input id="search" placeholder="Rechercher un nœud…"></div>
 
+    <button class="side-btn" id="reconfig" title="Modifier le rôle des colonnes (nœud / lien / info)">
+      <span aria-hidden="true">⚙</span> Configurer les rôles des colonnes
+    </button>
+
     <div>
       <div class="grp-label">Organiser autour de</div>
       <div class="pivot" id="pivot-list"></div>
     </div>
 
     <div>
-      <div class="grp-label">Couches visibles <a id="reconfig">rôles…</a></div>
+      <div class="grp-label">Couches visibles</div>
       <div id="layers-list"></div>
       <label class="layer off" id="hinge-layer" title="Afficher les ouvrages comme nœuds-charnières">
         <span class="tog"></span><span class="sw" style="background:#8A857B"></span>Ouvrages (charnière)
