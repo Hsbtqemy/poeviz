@@ -1,0 +1,10 @@
+# Backend — Cartographie interactive de métadonnées
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9      # upload de fichiers (multipart/form-data)
+pandas>=2.1
+openpyxl>=3.1                # lecture .xlsx
+networkx>=3.2               # graphe maître + métriques
+python-louvain>=0.16        # communautés (module « community »)
+matplotlib>=3.8             # export PNG/SVG/PDF
+numpy>=1.26

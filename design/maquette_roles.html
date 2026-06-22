@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Configuration des roles de colonnes</title>
+<style>
+  :root{
+    --ink:#23201C; --paper:#F7F4EE; --line:#E0DBD0; --panel:#FBF9F4;
+    --node:#1D8A68; --edge:#B8453F; --attr:#3B6FA8; --off:#B5B0A6; --muted:#8A857B;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Georgia,'Times New Roman',serif;background:var(--paper);color:var(--ink);
+    padding:30px 24px;line-height:1.5}
+  .wrap{max-width:880px;margin:0 auto}
+  h1{font-size:21px;margin-bottom:4px}
+  .sub{font-size:13px;color:var(--muted);font-style:italic;margin-bottom:24px;font-family:Arial,sans-serif}
+
+  .legend{display:flex;gap:18px;margin-bottom:20px;flex-wrap:wrap;font-family:Arial,sans-serif;font-size:12px}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:4px;flex:none}
+
+  table{width:100%;border-collapse:separate;border-spacing:0 9px}
+  th{text-align:left;font-family:Arial,sans-serif;font-size:10px;text-transform:uppercase;
+    letter-spacing:1px;color:var(--muted);padding:0 14px 4px}
+  tr.row td{background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+    padding:13px 14px;vertical-align:middle}
+  tr.row td:first-child{border-left:1px solid var(--line);border-radius:11px 0 0 11px}
+  tr.row td:last-child{border-right:1px solid var(--line);border-radius:0 11px 11px 0}
+
+  .col-name{font-size:15px;font-weight:bold}
+  .col-sample{font-size:11px;color:var(--muted);font-family:Arial,sans-serif;margin-top:2px}
+  .uniq{font-family:Arial,sans-serif;font-size:11px;color:var(--muted)}
+
+  .roles{display:flex;gap:5px}
+  .role{padding:6px 13px;border-radius:8px;font-family:Arial,sans-serif;font-size:12px;
+    border:1.5px solid var(--line);background:#fff;color:var(--off);cursor:pointer;white-space:nowrap}
+  .role.node.on{background:var(--node);border-color:var(--node);color:#fff}
+  .role.edge.on{background:var(--edge);border-color:var(--edge);color:#fff}
+  .role.attr.on{background:var(--attr);border-color:var(--attr);color:#fff}
+  .role.off.on{background:#EFEDE7;border-color:var(--line);color:var(--muted)}
+
+  .hintbar{margin-top:8px;background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:14px 18px;font-size:13px;font-family:Arial,sans-serif;color:var(--ink)}
+  .hintbar b{color:var(--edge)}
+  .pivotline{margin:22px 0 6px;font-family:Arial,sans-serif;font-size:13px}
+  .pivotline select{font-family:inherit;font-size:13px;padding:6px 10px;border-radius:8px;
+    border:1px solid var(--line);background:#fff;margin-left:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Configuration de la cartographie</h1>
+  <div class="sub">Chaque colonne de votre tableur recoit un role. Vous pouvez en changer a tout moment.</div>
+
+  <div class="legend">
+    <span><span class="chip" style="background:var(--node)"></span>Noeud — entite affichee dans le reseau</span>
+    <span><span class="chip" style="background:var(--edge)"></span>Lien — relie les noeuds entre eux</span>
+    <span><span class="chip" style="background:var(--attr)"></span>Info — s'affiche dans la fiche</span>
+    <span><span class="chip" style="background:#EFEDE7;border:1px solid var(--line)"></span>Ignore</span>
+  </div>
+
+  <table>
+    <thead><tr><th>Colonne detectee</th><th>Valeurs uniques</th><th style="text-align:right">Role</th></tr></thead>
+    <tbody>
+      <tr class="row">
+        <td><div class="col-name">Auteur</div><div class="col-sample">Cartarescu, Camus, Manea...</div></td>
+        <td class="uniq">17 / 25</td>
+        <td><div class="roles" style="justify-content:flex-end">
+          <span class="role node on">Noeud</span><span class="role edge">Lien</span><span class="role attr">Info</span><span class="role off">Ignore</span>
+        </div></td>
+      </tr>
+      <tr class="row">
+        <td><div class="col-name">Titre</div><div class="col-sample">Solenoide, L'Etranger...</div></td>
+        <td class="uniq">25 / 25</td>
+        <td><div class="roles" style="justify-content:flex-end">
+          <span class="role node">Noeud</span><span class="role edge on">Lien</span><span class="role attr">Info</span><span class="role off">Ignore</span>
+        </div></td>
+      </tr>
+      <tr class="row">
+        <td><div class="col-name">Traducteur</div><div class="col-sample">Hinckel, Cavailles...</div></td>
+        <td class="uniq">15 / 25</td>
+        <td><div class="roles" style="justify-content:flex-end">
+          <span class="role node on">Noeud</span><span class="role edge">Lien</span><span class="role attr">Info</span><span class="role off">Ignore</span>
+        </div></td>
+      </tr>
+      <tr class="row">
+        <td><div class="col-name">Maison d'edition</div><div class="col-sample">Gallimard, Humanitas...</div></td>
+        <td class="uniq">14 / 25</td>
+        <td><div class="roles" style="justify-content:flex-end">
+          <span class="role node on">Noeud</span><span class="role edge">Lien</span><span class="role attr">Info</span><span class="role off">Ignore</span>
+        </div></td>
+      </tr>
+      <tr class="row">
+        <td><div class="col-name">Annee</div><div class="col-sample">1949, 2019, 2022...</div></td>
+        <td class="uniq">19 / 25</td>
+        <td><div class="roles" style="justify-content:flex-end">
+          <span class="role node">Noeud</span><span class="role edge">Lien</span><span class="role attr on">Info</span><span class="role off">Ignore</span>
+        </div></td>
+      </tr>
+      <tr class="row">
+        <td><div class="col-name">Lieu</div><div class="col-sample">Paris, Bucarest, Iasi...</div></td>
+        <td class="uniq">4 / 25</td>
+        <td><div class="roles" style="justify-content:flex-end">
+          <span class="role node">Noeud</span><span class="role edge">Lien</span><span class="role attr on">Info</span><span class="role off">Ignore</span>
+        </div></td>
+      </tr>
+      <tr class="row">
+        <td><div class="col-name">Genre</div><div class="col-sample">Roman, Poesie, Essai...</div></td>
+        <td class="uniq">4 / 25</td>
+        <td><div class="roles" style="justify-content:flex-end">
+          <span class="role node">Noeud</span><span class="role edge">Lien</span><span class="role attr on">Info</span><span class="role off">Ignore</span>
+        </div></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="hintbar">
+    Avec cette configuration : les <b style="color:var(--node)">auteurs</b>, <b style="color:var(--node)">traducteurs</b> et <b style="color:var(--node)">editeurs</b> sont des noeuds, relies par le <b style="color:var(--edge)">titre</b> du livre. L'annee, le lieu et le genre apparaissent dans la fiche au clic.
+    <br><br>
+    Faites glisser <b>Lieu</b> de « Info » vers « Noeud » et les villes deviennent a leur tour des points du reseau. Faites glisser <b>Annee</b> vers « Lien » et deux livres parus la meme annee se trouvent relies. La meme donnee, une carte differente.
+  </div>
+
+  <div class="pivotline">
+    Organiser la carte autour de :
+    <select>
+      <option>Auteurs</option><option>Traducteurs</option>
+      <option>Maisons d'edition</option><option>Lieux</option>
+    </select>
+  </div>
+</div>
+</body>
+</html>

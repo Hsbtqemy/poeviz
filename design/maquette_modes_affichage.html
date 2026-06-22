@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Modes d'affichage des noeuds</title>
+<style>
+  :root{
+    --ink:#23201C; --paper:#F7F4EE; --line:#E0DBD0; --panel:#FBF9F4;
+    --node:#1D8A68; --accent:#B8453F; --muted:#8A857B;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Georgia,'Times New Roman',serif;background:var(--paper);color:var(--ink);
+    padding:28px 22px;line-height:1.5}
+  .wrap{max-width:1000px;margin:0 auto}
+  h1{font-size:20px;margin-bottom:4px}
+  .sub{font-size:13px;color:var(--muted);font-style:italic;margin-bottom:22px;font-family:Arial,sans-serif}
+
+  .modebar{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;
+    margin-bottom:24px;font-family:Arial,sans-serif;font-size:12.5px}
+  .modebar span{padding:8px 16px;background:#fff;color:var(--muted);border-right:1px solid var(--line)}
+  .modebar span:last-child{border-right:none}
+  .modebar span.on{background:var(--ink);color:#fff}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+  .card-demo{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:18px;
+    text-align:center}
+  .card-demo h3{font-size:13px;font-family:Arial,sans-serif;margin-bottom:3px}
+  .card-demo .z{font-size:11px;color:var(--muted);font-family:Arial,sans-serif;margin-bottom:14px}
+  .stage{background:#fff;border-radius:9px;height:200px;display:flex;align-items:center;
+    justify-content:center;border:1px solid var(--line)}
+
+  svg{overflow:visible}
+  .edge{stroke:#CFC9BD;stroke-width:1.4}
+  .lbl{font-size:8px;fill:var(--ink);font-family:Arial,sans-serif}
+
+  .mini-card{fill:#fff;stroke:var(--line);stroke-width:1}
+  .mc-band{fill:var(--node)}
+  .mc-t{font-size:7px;font-family:Arial,sans-serif;font-weight:bold;fill:var(--ink)}
+  .mc-s{font-size:6px;font-family:Arial,sans-serif;fill:var(--muted)}
+
+  .note{margin-top:24px;background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:16px 18px;font-size:13px;font-family:Arial,sans-serif}
+  .note b{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Comment s'affichent les noeuds</h1>
+  <div class="sub">Trois niveaux de detail. Automatique selon le zoom, ou force manuellement.</div>
+
+  <div class="modebar">
+    <span>Affichage :</span>
+    <span class="on">Automatique</span>
+    <span>Toujours points</span>
+    <span>Toujours cartes</span>
+  </div>
+
+  <div class="cols">
+
+    <!-- POINTS -->
+    <div class="card-demo">
+      <h3>Points</h3>
+      <div class="z">vue d'ensemble (dezoome)</div>
+      <div class="stage">
+        <svg width="200" height="180" viewBox="0 0 200 180">
+          <line class="edge" x1="100" y1="90" x2="50" y2="50"/>
+          <line class="edge" x1="100" y1="90" x2="55" y2="135"/>
+          <line class="edge" x1="100" y1="90" x2="150" y2="60"/>
+          <line class="edge" x1="150" y1="60" x2="160" y2="120"/>
+          <circle cx="100" cy="90" r="13" fill="#1D8A68" stroke="#fff" stroke-width="1.5"/>
+          <circle cx="50" cy="50" r="8" fill="#7B5BD6" stroke="#fff" stroke-width="1.5"/>
+          <circle cx="55" cy="135" r="8" fill="#7B5BD6" stroke="#fff" stroke-width="1.5"/>
+          <circle cx="150" cy="60" r="10" fill="#C07A1A" stroke="#fff" stroke-width="1.5"/>
+          <circle cx="160" cy="120" r="7" fill="#3B82C4" stroke="#fff" stroke-width="1.5"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- POINTS + LABELS -->
+    <div class="card-demo">
+      <h3>Points + etiquettes</h3>
+      <div class="z">zoom intermediaire</div>
+      <div class="stage">
+        <svg width="200" height="180" viewBox="0 0 200 180">
+          <line class="edge" x1="100" y1="85" x2="55" y2="45"/>
+          <line class="edge" x1="100" y1="85" x2="60" y2="135"/>
+          <line class="edge" x1="100" y1="85" x2="150" y2="60"/>
+          <circle cx="100" cy="85" r="13" fill="#1D8A68" stroke="#fff" stroke-width="1.5"/>
+          <text class="lbl" x="100" y="108" text-anchor="middle" font-weight="bold">Hinckel</text>
+          <circle cx="55" cy="45" r="8" fill="#7B5BD6" stroke="#fff" stroke-width="1.5"/>
+          <text class="lbl" x="55" y="30" text-anchor="middle">Cartarescu</text>
+          <circle cx="60" cy="135" r="8" fill="#7B5BD6" stroke="#fff" stroke-width="1.5"/>
+          <text class="lbl" x="60" y="155" text-anchor="middle">Visniec</text>
+          <circle cx="150" cy="60" r="10" fill="#C07A1A" stroke="#fff" stroke-width="1.5"/>
+          <text class="lbl" x="150" y="44" text-anchor="middle">N.s/Blanc</text>
+        </svg>
+      </div>
+    </div>
+
+    <!-- CARDS -->
+    <div class="card-demo">
+      <h3>Cartes</h3>
+      <div class="z">zoom rapproche</div>
+      <div class="stage">
+        <svg width="200" height="180" viewBox="0 0 200 180">
+          <line class="edge" x1="100" y1="90" x2="48" y2="55"/>
+          <line class="edge" x1="100" y1="90" x2="150" y2="120"/>
+          <!-- central card -->
+          <rect class="mini-card" x="66" y="70" width="68" height="44" rx="6"/>
+          <rect class="mc-band" x="66" y="70" width="68" height="9" rx="6"/>
+          <rect class="mc-band" x="66" y="74" width="68" height="5"/>
+          <text class="mc-t" x="72" y="92">L. Hinckel</text>
+          <text class="mc-s" x="72" y="102">Traductrice</text>
+          <text class="mc-s" x="72" y="110">3 ouvrages</text>
+          <!-- small card 1 -->
+          <rect class="mini-card" x="6" y="34" width="56" height="36" rx="5"/>
+          <rect class="mc-band" x="6" y="34" width="56" height="7" rx="5" fill="#7B5BD6"/>
+          <text class="mc-t" x="11" y="52">Cartarescu</text>
+          <text class="mc-s" x="11" y="62">2 livres</text>
+          <!-- small card 2 -->
+          <rect class="mini-card" x="138" y="104" width="56" height="36" rx="5"/>
+          <rect class="mc-band" x="138" y="104" width="56" height="7" rx="5" fill="#C07A1A"/>
+          <text class="mc-t" x="143" y="122">N. sur Blanc</text>
+          <text class="mc-s" x="143" y="132">Paris</text>
+        </svg>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="note">
+    Par defaut, le passage d'un mode a l'autre est <b>automatique</b> selon le zoom : on garde une galaxie lisible de loin, et le detail apparait en s'approchant. Mais vous pouvez <b>forcer</b> un mode (toujours points / toujours cartes) — utile notamment pour preparer une image a exporter vers Word. Et vous pouvez <b>epingler</b> une carte sur un noeud precis pour la garder depliee pendant que le reste reste en points.
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Exports / fichiers temporaires générés
+exports/
+*.png
+*.svg
+*.pdf
+*.gexf
+!design/*.png
+
+# OS / éditeurs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
