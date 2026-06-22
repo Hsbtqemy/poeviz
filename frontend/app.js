@@ -128,6 +128,14 @@
       `Nœuds : <b class="n">${j(by.node)}</b> — reliés par <b class="e">${j(by.edge)}</b>. ` +
       `Infos en fiche : <b class="a">${j(by.attribute)}</b>.<br>` +
       `Astuce : passez une colonne « Info » vers « Nœud » et ses valeurs deviennent des points du réseau. La même donnée, une carte différente.`;
+    // Avertissement doux : une colonne quasi-unique convient mieux comme lien.
+    const uniq = {};
+    (State.profile.columns || []).forEach((c) => { uniq[c.name] = c.uniqueness; });
+    const tooUnique = by.node.filter((c) => (uniq[c] || 0) >= 0.9);
+    if (tooUnique.length) {
+      el["roles-hint"].innerHTML +=
+        `<br><span style="color:var(--sel)">« ${esc(tooUnique[0])} » n'a presque que des valeurs uniques — elle convient souvent mieux comme <b>lien</b> que comme nœud.</span>`;
+    }
     const ok = by.node.length > 0;
     el["roles-build"].disabled = !ok;
     el["roles-status"].textContent = ok ? "" : "Choisissez au moins une colonne « Nœud ».";

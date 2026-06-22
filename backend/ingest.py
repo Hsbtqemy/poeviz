@@ -31,10 +31,15 @@ DEFAULT_SEPARATORS: list[str] = [";", " & ", " et ", " and ", "&", ","]
 # d'ouvrage, quasi unique) qu'un *nœud*.
 EDGE_UNIQUENESS_THRESHOLD = 0.9
 
-# En deçà de ce nombre de valeurs distinctes, une colonne texte est « catégorielle
-# courte » (Genre, Lieu, Réédition, Langue) → suggérée comme *info* (attribut)
-# plutôt que comme un type d'entité affiché.
-MAX_CATEGORICAL_FOR_ATTRIBUTE = 8
+# En deçà de ce taux d'unicité (valeurs distinctes / valeurs totales), une colonne
+# texte est « catégorielle courte » (Genre, Lieu, Réédition, Langue) → suggérée
+# comme *info* plutôt que comme type d'entité. Réglage relatif (pas absolu), pour
+# rester robuste quel que soit le nombre de lignes.
+ATTRIBUTE_UNIQUENESS_THRESHOLD = 0.2
+
+# Une colonne avec au plus ce nombre de valeurs distinctes (binaire « oui/non »,
+# constante…) est toujours une *info*, jamais un type d'entité.
+MAX_UNIQUE_FOR_ATTRIBUTE = 2
 
 # Plage plausible d'une année (utilisée pour repérer une colonne temporelle).
 YEAR_MIN, YEAR_MAX = 1000, 2300
@@ -134,7 +139,9 @@ def profile_dataframe(df: pd.DataFrame,
 
         unique_values = sorted(set(atomic), key=str.lower)
         n_unique = len(unique_values)
-        uniqueness = (n_unique / filled) if filled else 0.0
+        # Taux d'unicité rapporté aux valeurs *atomiques* → toujours dans [0, 1],
+        # même quand une cellule contient plusieurs entités.
+        uniqueness = (n_unique / len(atomic)) if atomic else 0.0
         dtype = _infer_dtype(series)
         year_candidate = _looks_like_year_column(col, series, dtype)
 
@@ -149,7 +156,29 @@ def profile_dataframe(df: pd.DataFrame,
             suggested_role=suggest_role(dtype, n_unique, uniqueness, year_candidate),
             is_year_candidate=year_candidate,
         ))
+
+    _ensure_node_candidate(profiles)
     return profiles
+
+
+def _ensure_node_candidate(profiles: list[ColumnProfile]) -> None:
+    """Garantit au moins une colonne en rôle « nœud » quand c'est possible :
+    sinon la carte serait vide. On promeut la colonne texte la plus « nœud-like »
+    (taux d'unicité modéré, plusieurs valeurs répétées)."""
+    if any(p.suggested_role == ROLE_NODE for p in profiles):
+        return
+    candidates = [
+        p for p in profiles
+        if p.dtype == "text" and not p.is_year_candidate
+        and p.n_unique > MAX_UNIQUE_FOR_ATTRIBUTE
+        and p.uniqueness < EDGE_UNIQUENESS_THRESHOLD
+    ]
+    if not candidates:
+        return
+    # La meilleure : taux d'unicité le plus élevé sous le seuil de lien
+    # (beaucoup d'entités distinctes mais réutilisées).
+    best = max(candidates, key=lambda p: p.uniqueness)
+    best.suggested_role = ROLE_NODE
 
 
 def suggest_role(dtype: str, n_unique: int, uniqueness: float,
@@ -160,14 +189,17 @@ def suggest_role(dtype: str, n_unique: int, uniqueness: float,
     """
     if n_unique == 0:
         return ROLE_IGNORE
-    # Une colonne quasi-unique (un titre) relie mieux qu'elle n'affiche.
-    if uniqueness >= EDGE_UNIQUENESS_THRESHOLD and n_unique > 1:
-        return ROLE_EDGE
     # Numérique (année, prix, compteur) ou date → enrichit la fiche.
     if dtype in ("number", "date") or year_candidate:
         return ROLE_ATTRIBUTE
-    # Catégoriel court (Genre, Lieu, Réédition, Langue) → info.
-    if n_unique <= MAX_CATEGORICAL_FOR_ATTRIBUTE:
+    # Une colonne quasi-unique (un titre) relie mieux qu'elle n'affiche.
+    if uniqueness >= EDGE_UNIQUENESS_THRESHOLD and n_unique > MAX_UNIQUE_FOR_ATTRIBUTE:
+        return ROLE_EDGE
+    # Binaire / quasi-constant (oui/non, une seule langue) → info.
+    if n_unique <= MAX_UNIQUE_FOR_ATTRIBUTE:
+        return ROLE_ATTRIBUTE
+    # Catégoriel court relativement aux lignes (Genre, Lieu) → info.
+    if uniqueness < ATTRIBUTE_UNIQUENESS_THRESHOLD:
         return ROLE_ATTRIBUTE
     # Texte répété, ni trop unique ni trop court → type d'entité affiché.
     return ROLE_NODE
