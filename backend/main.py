@@ -11,6 +11,7 @@ Lancement :  uvicorn backend.main:app --reload
 from __future__ import annotations
 
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -24,10 +25,17 @@ import io
 
 from . import ingest, graph, analysis, export
 
+# Réglages de garde-fou (faciles à éditer).
+MAX_SESSIONS = 12                 # plafond de sessions en mémoire (éviction LRU)
+MAX_UPLOAD_MB = 25                # taille max d'un .xlsx accepté
+MAX_METRICS_CACHE = 128           # vues mémorisées par session (cache des métriques)
+
 app = FastAPI(title="Cartographie interactive de métadonnées",
               description="Tableur Excel → réseau d'entités explorable",
               version="1.0.0")
 
+# CORS « ouvert » : pratique pour un usage local. À restreindre (allow_origins=[...])
+# si l'outil est un jour exposé sur un réseau.
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
@@ -48,15 +56,28 @@ class Session:
     master: Any = None            # nx.Graph
     meta: graph.MasterMeta | None = None
     positions: dict[str, list[float]] = field(default_factory=dict)
+    # Cache des métriques par signature de projection (perf : évite de relancer
+    # Louvain/centralités à chaque cran de curseur ou changement de couleur).
+    metrics_cache: dict[Any, Any] = field(default_factory=OrderedDict)
 
 
-SESSIONS: dict[str, Session] = {}
+# Sessions en mémoire, avec éviction LRU (pas de base de données ; on plafonne
+# pour ne pas accumuler indéfiniment des graphes en RAM).
+SESSIONS: "OrderedDict[str, Session]" = OrderedDict()
+
+
+def store_session(session_id: str, session: Session) -> None:
+    SESSIONS[session_id] = session
+    SESSIONS.move_to_end(session_id)
+    while len(SESSIONS) > MAX_SESSIONS:
+        SESSIONS.popitem(last=False)   # évince la session la plus ancienne
 
 
 def get_session(session_id: str) -> Session:
     session = SESSIONS.get(session_id)
     if session is None:
         raise HTTPException(404, "Session inconnue ou expirée. Rechargez un fichier.")
+    SESSIONS.move_to_end(session_id)   # « touche » la session (LRU)
     return session
 
 
@@ -75,6 +96,9 @@ class ConfigureBody(BaseModel):
     sheet: str | None = None
     separators: list[str] | None = None
     time_col: str | None = None
+    unit_singular: str | None = None   # nom d'une ligne (charnière), au singulier
+    unit_plural: str | None = None     # … et au pluriel
+    hinge_key: str | None = None       # colonne regroupant les lignes en une charnière
 
 
 class ExportBody(BaseModel):
@@ -87,6 +111,8 @@ class ExportBody(BaseModel):
     view: dict[str, Any] = {}      # {nodes:[...], edges:[...]} envoyés par le front
     panels: list[dict[str, Any]] | None = None   # petits multiples : une vue par période
     time_axis: dict[str, Any] | None = None      # réseau temporel : axe des années à dessiner
+    unit_singular: str = "objet"   # nom d'une ligne (charnière) pour les libellés
+    unit_plural: str = "objets"
 
 
 # --------------------------------------------------------------------------
@@ -110,7 +136,21 @@ def build_view(session: Session, params: graph.ProjectionParams,
     """Projette + analyse + assemble nœuds/arêtes prêts pour Sigma (et l'export)."""
     G, meta = session.master, session.meta
     P = graph.project(G, meta, params)
-    metrics = analysis.compute_metrics(P, size_by=size_by)
+
+    # Métriques : coûteuses (Louvain + centralités). Elles ne dépendent que de la
+    # PROJECTION (couches/liens/charnière/années) + size_by, pas de la couleur.
+    # On les mémorise → changer la couleur ou revenir sur une vue est instantané.
+    cache_key = (
+        tuple(sorted(params.layers)) if params.layers is not None else None,
+        params.link_mode, params.show_hinge, params.year_min, params.year_max, size_by,
+    )
+    cache = session.metrics_cache
+    metrics = cache.get(cache_key)
+    if metrics is None:
+        metrics = analysis.compute_metrics(P, size_by=size_by)
+        if len(cache) >= MAX_METRICS_CACHE:
+            cache.clear()                 # garde-fou mémoire (cache borné)
+        cache[cache_key] = metrics
     per_node = metrics["nodes"]
 
     # Échelle des tailles à partir de la centralité choisie.
@@ -124,7 +164,7 @@ def build_view(session: Session, params: graph.ProjectionParams,
     for n, d in P.nodes(data=True):
         nm = per_node[n]
         size = 5.0 + 17.0 * ((raw[n] - lo) / span)
-        my = graph.node_mean_year(G, n, d)
+        my = graph.node_mean_year(d)
         if color_by == "epoch":
             color = graph.epoch_color(my, meta.year_min, meta.year_max)
         elif color_by == "community":
@@ -185,13 +225,25 @@ async def upload(file: UploadFile = File(...)) -> dict[str, Any]:
     name = (file.filename or "").lower()
     if not name.endswith((".xlsx", ".xlsm")):
         raise HTTPException(400, "Déposez un fichier .xlsx pour commencer.")
-    content = await file.read()
+    # Lecture plafonnée : on s'arrête dès qu'on dépasse la limite (évite l'OOM
+    # sur un fichier énorme avant même de le parser).
+    limit = MAX_UPLOAD_MB * 1024 * 1024
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(413, f"Fichier trop volumineux (limite : {MAX_UPLOAD_MB} Mo).")
+        chunks.append(chunk)
     try:
-        dataset = ingest.read_workbook(content)
+        dataset = ingest.read_workbook(b"".join(chunks))
     except Exception as exc:
         raise HTTPException(400, f"Lecture impossible : {exc}")
     session_id = uuid.uuid4().hex[:12]
-    SESSIONS[session_id] = Session(dataset=dataset)
+    store_session(session_id, Session(dataset=dataset))
     return {
         "session_id": session_id,
         "sheets": dataset.sheets,
@@ -208,7 +260,7 @@ def demo() -> dict[str, Any]:
         raise HTTPException(404, "Fichier de démonstration introuvable.")
     dataset = ingest.read_workbook(demo_path.read_bytes())
     session_id = uuid.uuid4().hex[:12]
-    SESSIONS[session_id] = Session(dataset=dataset)
+    store_session(session_id, Session(dataset=dataset))
     return {
         "session_id": session_id,
         "sheets": dataset.sheets,
@@ -229,12 +281,14 @@ def profile(session_id: str, sheet: str | None = None) -> dict[str, Any]:
     profiles = ingest.profile_dataframe(df, session.separators)
     session.profiles[ds.active_sheet] = profiles
     time_col = graph._auto_time_col(df)
+    unit_s, unit_p = ingest.default_unit_label(ds.active_sheet)
     return {
         "session_id": session_id,
         "sheet": ds.active_sheet,
         "n_rows": len(df),
         "time_col": str(time_col) if time_col is not None else None,
         "separators": session.separators,
+        "suggested_unit": {"singular": unit_s, "plural": unit_p},
         "columns": [p.to_dict() for p in profiles],
     }
 
@@ -249,18 +303,41 @@ def configure(body: ConfigureBody) -> dict[str, Any]:
     if body.separators is not None:
         session.separators = body.separators
     session.roles = {str(k): v for k, v in body.roles.items()}
+    hinge_key = (body.hinge_key or "").strip() or None
 
-    node_cols = [c for c, r in session.roles.items() if r == ingest.ROLE_NODE]
+    # Une colonne ne peut pas être à la fois clé de regroupement ET entité : la clé
+    # est consommée par l'identité de la charnière. On compte les nœuds RÉELS (hors clé).
+    node_cols = [c for c, r in session.roles.items()
+                 if r == ingest.ROLE_NODE and c != hinge_key]
     if not node_cols:
+        if hinge_key and session.roles.get(hinge_key) == ingest.ROLE_NODE:
+            raise HTTPException(
+                400, f"La colonne « {hinge_key} » sert à regrouper les lignes : elle "
+                     "ne peut pas être en même temps un type d'entité affiché. Mettez "
+                     "au moins une AUTRE colonne en rôle « nœud » (ex. Traducteur, "
+                     "Éditeur), ou choisissez une autre colonne de regroupement.")
         raise HTTPException(
             400, "Aucune colonne en rôle « nœud ». Choisissez au moins un type "
                  "d'entité à afficher (ex. Auteur, Traducteur).")
 
+    # Nom de la charnière : le singulier suffit, le pluriel est dérivé. On retombe
+    # sur la suggestion liée au nom de feuille si rien n'est fourni.
+    def_s, def_p = ingest.default_unit_label(ds.active_sheet)
+    typed_s = (body.unit_singular or "").strip()
+    if typed_s:
+        unit_s = typed_s
+        unit_p = (body.unit_plural or "").strip() or ingest.pluralize_fr(typed_s)
+    else:
+        unit_s, unit_p = def_s, def_p
+
     G, meta = graph.build_master_graph(df, session.roles, session.separators,
-                                       time_col=body.time_col)
+                                       time_col=body.time_col,
+                                       unit_singular=unit_s, unit_plural=unit_p,
+                                       hinge_key=hinge_key)
     session.master = G
     session.meta = meta
     session.positions = graph.initial_positions(G)
+    session.metrics_cache.clear()      # nouveau graphe → cache de métriques obsolète
     return {"session_id": body.session_id, "summary": meta.to_summary()}
 
 
@@ -280,6 +357,16 @@ def get_graph(
     require_master(session)
     params = parse_projection(layers, link_mode, show_hinge, year_min, year_max, pivot)
     return build_view(session, params, color_by=color_by, size_by=size_by)
+
+
+@app.get("/cards")
+def get_cards(session_id: str) -> dict[str, dict[str, str]]:
+    """Cartes des charnières (entités liées + attributs + année), invariantes par
+    projection. Le front les récupère une fois (au 1er affichage de la couche
+    charnière) et les réutilise — au lieu de les recevoir à chaque cran du curseur."""
+    session = get_session(session_id)
+    require_master(session)
+    return graph.all_work_cards(session.master, session.meta)
 
 
 @app.get("/timeline")
@@ -405,16 +492,22 @@ def post_export(body: ExportBody):
     try:
         if kind == "small_multiples":
             data, ctype = export.render_small_multiples(
-                body.panels or [], fmt=body.format, title=body.title)
+                body.panels or [], fmt=body.format, title=body.title,
+                unit_singular=body.unit_singular, unit_plural=body.unit_plural)
             ext = body.format.lower()
         elif kind == "chronology":
             data, ctype = export.render_chronology(
-                body.view or {}, fmt=body.format, title=body.title)
+                body.view or {}, fmt=body.format, title=body.title,
+                unit_singular=body.unit_singular, unit_plural=body.unit_plural)
             ext = body.format.lower()
         elif kind == "image":
+            # On injecte le nom de l'unité dans l'axe temporel pour le libellé.
+            time_axis = body.time_axis
+            if time_axis is not None:
+                time_axis = {**time_axis, "unit_plural": body.unit_plural}
             data, ctype = export.render_image(
                 nodes, edges, fmt=body.format, dimensions=body.dimensions,
-                labels=body.labels, title=body.title, time_axis=body.time_axis)
+                labels=body.labels, title=body.title, time_axis=time_axis)
             ext = body.format.lower()
         elif kind == "gexf":
             data, ctype, ext = export.build_gexf(nodes, edges), "application/gexf+xml", "gexf"

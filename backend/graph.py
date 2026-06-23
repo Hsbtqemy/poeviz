@@ -88,18 +88,16 @@ def _hex_rgb(h: str) -> tuple[int, int, int]:
     return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
 
 
-def node_mean_year(G: nx.Graph, node_id: str, data: dict) -> float | None:
+def node_mean_year(data: dict) -> float | None:
     """Année moyenne d'activité d'un nœud (moyenne des années de ses ouvrages
-    actifs). Pour un nœud-ouvrage, c'est sa propre année."""
+    actifs). Pour un nœud-ouvrage, c'est sa propre année.
+
+    Les années des ouvrages actifs sont déposées sur le nœud projeté par
+    `project()` (attribut `work_years`) : on ne reconstruit aucun id de charnière,
+    donc ça marche quel que soit son format (fusion `hinge_key` incluse)."""
     if data.get("kind") == "work":
         return data.get("year")
-    years: list[int] = []
-    for row in data.get("work_rows", []) or []:
-        wid = f"work::{row}"
-        if wid in G:
-            y = G.nodes[wid].get("year")
-            if y is not None:
-                years.append(y)
+    years = data.get("work_years") or []
     return (sum(years) / len(years)) if years else None
 
 
@@ -117,6 +115,12 @@ class MasterMeta:
     type_counts: dict[str, int]
     palette: dict[str, str]
     separators: list[str]
+    # Nom affiché de la charnière (une ligne) — singulier / pluriel. Réglable.
+    unit_singular: str = "objet"
+    unit_plural: str = "objets"
+    # Colonne définissant l'IDENTITÉ de la charnière : les lignes qui partagent
+    # cette valeur fusionnent en une seule charnière (None = une ligne = une charnière).
+    hinge_key: str | None = None
 
     def to_summary(self) -> dict[str, Any]:
         return {
@@ -130,6 +134,9 @@ class MasterMeta:
             "type_counts": self.type_counts,
             "palette": self.palette,
             "separators": self.separators,
+            "unit_singular": self.unit_singular,
+            "unit_plural": self.unit_plural,
+            "hinge_key": self.hinge_key,
             "n_nodes_total": sum(self.type_counts.values()),
         }
 
@@ -139,11 +146,22 @@ class MasterMeta:
 # --------------------------------------------------------------------------
 
 def build_master_graph(df, roles: dict[str, str], separators: list[str],
-                       time_col: str | None = None) -> tuple[nx.Graph, MasterMeta]:
-    """Construit le graphe maître complet à partir des rôles choisis."""
-    node_cols = [c for c in df.columns if roles.get(str(c)) == ROLE_NODE]
-    edge_cols = [c for c in df.columns if roles.get(str(c)) == ROLE_EDGE]
-    attr_cols = [c for c in df.columns if roles.get(str(c)) == ROLE_ATTRIBUTE]
+                       time_col: str | None = None,
+                       unit_singular: str = "objet",
+                       unit_plural: str = "objets",
+                       hinge_key: str | None = None) -> tuple[nx.Graph, MasterMeta]:
+    """Construit le graphe maître complet à partir des rôles choisis.
+
+    Si `hinge_key` désigne une colonne, les lignes qui partagent la même valeur
+    dans cette colonne **fusionnent en une seule charnière** (ex. VO + traduction
+    d'une même œuvre). La colonne-clé est alors consommée par l'identité et exclue
+    des rôles. Sans clé, une ligne = une charnière (comportement historique).
+    """
+    # La colonne-clé est réservée à l'identité : on l'exclut des rôles affichés.
+    hk = hinge_key if (hinge_key and hinge_key in [str(c) for c in df.columns]) else None
+    node_cols = [c for c in df.columns if roles.get(str(c)) == ROLE_NODE and str(c) != hk]
+    edge_cols = [c for c in df.columns if roles.get(str(c)) == ROLE_EDGE and str(c) != hk]
+    attr_cols = [c for c in df.columns if roles.get(str(c)) == ROLE_ATTRIBUTE and str(c) != hk]
 
     # Colonne temporelle : celle désignée, sinon la première colonne dont les
     # valeurs ressemblent à des années (toutes colonnes confondues).
@@ -153,19 +171,40 @@ def build_master_graph(df, roles: dict[str, str], separators: list[str],
     years: list[int] = []
 
     for idx, row in df.iterrows():
-        work_id = f"work::{idx}"
-        # Étiquette de la charnière = valeurs des colonnes-lien jointes.
-        edge_values = [_normalize_scalar(row[c]) for c in edge_cols if not _is_blank(row[c])]
-        label = " · ".join(edge_values) if edge_values else f"Ligne {idx + 1}"
+        # Identité de la charnière : valeur de la clé si fournie, sinon la ligne.
+        key_val = _normalize_scalar(row[hk]) if (hk and not _is_blank(row[hk])) else None
+        work_id = f"work::key::{key_val}" if key_val is not None else f"work::{idx}"
+
+        # Valeurs-lien de CETTE ligne (ex. son titre).
+        edge_values = list(dict.fromkeys(
+            _normalize_scalar(row[c]) for c in edge_cols if not _is_blank(row[c])))
         year = parse_year(row[time_col]) if time_col else None
         if year is not None:
             years.append(year)
-        attributes = {
+        row_attrs = {
             str(c): _normalize_scalar(row[c])
             for c in attr_cols if not _is_blank(row[c])
         }
-        G.add_node(work_id, kind="work", type=WORK_TYPE, label=label,
-                   year=year, attributes=attributes, row=int(idx))
+
+        if work_id in G:
+            # Fusion : plusieurs lignes décrivent la même charnière (même œuvre).
+            wd = G.nodes[work_id]
+            merged_edges = wd["_edge_set"]
+            for v in edge_values:
+                if v not in merged_edges:
+                    merged_edges.append(v)
+            wd["label"] = " · ".join(merged_edges) if merged_edges else (key_val or wd["label"])
+            if year is not None:
+                wd["year"] = year if wd.get("year") is None else min(wd["year"], year)
+            for k, v in row_attrs.items():     # attributs : valeurs distinctes cumulées
+                if k not in wd["attributes"]:
+                    wd["attributes"][k] = v
+                elif v not in str(wd["attributes"][k]).split(" · "):
+                    wd["attributes"][k] = f"{wd['attributes'][k]} · {v}"
+        else:
+            label = " · ".join(edge_values) if edge_values else (key_val or f"Ligne {idx + 1}")
+            G.add_node(work_id, kind="work", type=WORK_TYPE, label=label, year=year,
+                       attributes=dict(row_attrs), row=int(idx), _edge_set=list(edge_values))
 
         # Relie chaque valeur de chaque colonne-nœud à cette charnière.
         for col in node_cols:
@@ -175,8 +214,16 @@ def build_master_graph(df, roles: dict[str, str], separators: list[str],
                     G.add_node(node_id, kind="entity", type=str(col), label=value)
                 G.add_edge(node_id, work_id, row=int(idx))
 
+    # `_edge_set` n'a servi qu'à cumuler les valeurs-lien pendant la lecture des
+    # lignes (fusion des titres). Une fois le label figé, on le retire : il ne doit
+    # pas être porté par les nœuds (ni copié dans chaque projection, ni émis par un
+    # futur export brut de tous les attributs).
+    for _, wd in G.nodes(data=True):
+        wd.pop("_edge_set", None)
+
     type_counts = _count_types(G)
     palette = assign_palette(node_cols)
+    n_works = sum(1 for _, d in G.nodes(data=True) if d.get("kind") == "work")
     meta = MasterMeta(
         roles={str(k): v for k, v in roles.items()},
         node_cols=[str(c) for c in node_cols],
@@ -185,10 +232,13 @@ def build_master_graph(df, roles: dict[str, str], separators: list[str],
         time_col=str(time_col) if time_col is not None else None,
         year_min=min(years) if years else None,
         year_max=max(years) if years else None,
-        n_works=len(df),
+        n_works=n_works,
         type_counts=type_counts,
         palette=palette,
         separators=separators,
+        unit_singular=unit_singular,
+        unit_plural=unit_plural,
+        hinge_key=hk,
     )
     return G, meta
 
@@ -316,7 +366,11 @@ def project(G: nx.Graph, meta: MasterMeta, params: ProjectionParams) -> nx.Graph
     for n in visible_entities:
         works = [w for w in G.neighbors(n) if w in active_works]
         P.nodes[n]["work_count"] = len(works)
-        P.nodes[n]["work_rows"] = sorted(G.nodes[w].get("row") for w in works)
+        # Années réelles des ouvrages actifs (pour mean_year : couleur par époque
+        # et axe temporel). On stocke les années, pas des numéros de ligne, afin de
+        # rester robuste au format d'id de la charnière (fusion `hinge_key` incluse).
+        P.nodes[n]["work_years"] = sorted(
+            y for w in works if (y := G.nodes[w].get("year")) is not None)
     for n in (visible_nodes & active_works):
         P.nodes[n]["work_count"] = 1
 
@@ -354,6 +408,49 @@ def _bump_edge(P: nx.Graph, u: str, v: str, w: int) -> None:
 # Détail d'un nœud (pour le panneau de droite)
 # --------------------------------------------------------------------------
 
+def entities_by_type(G: nx.Graph, node_id: str,
+                     exclude: str | None = None) -> dict[str, list[str]]:
+    """Entités voisines d'un nœud, groupées par type → liste de labels.
+
+    Base commune (helper unique) à la carte d'une charnière (`work_card`), à la
+    fiche d'un nœud (`node_detail`) et aux « partenaires » d'un ouvrage : un seul
+    endroit pour parcourir les voisins, pour qu'ils ne divergent plus.
+    """
+    out: dict[str, list[str]] = {}
+    for nb in G.neighbors(node_id):
+        if nb == exclude:
+            continue
+        nd = G.nodes[nb]
+        if nd.get("kind") == "entity":
+            out.setdefault(nd["type"], []).append(nd.get("label", nb))
+    return out
+
+
+def work_card(G: nx.Graph, meta: MasterMeta, node_id: str) -> dict[str, str]:
+    """Valeurs affichables sur la carte d'une charnière (un livre) : entités liées
+    groupées par type, attributs, et l'année. Le front choisit lesquelles montrer.
+
+    Lue sur le graphe **maître** → **invariante par projection** : la carte est la
+    fiche complète de la ligne (toutes ses entités, y compris des couches masquées —
+    choix délibéré), donc calculable une seule fois et servie par `/cards` au lieu
+    d'être réémise à chaque appel `/graph` (cf. balayage du curseur temporel)."""
+    d = G.nodes[node_id]
+    out: dict[str, str] = {
+        t: " · ".join(vals) for t, vals in entities_by_type(G, node_id).items()
+    }
+    for k, v in (d.get("attributes") or {}).items():
+        out[str(k)] = str(v)
+    if d.get("year") is not None and meta.time_col:
+        out.setdefault(str(meta.time_col), str(d["year"]))
+    return out
+
+
+def all_work_cards(G: nx.Graph, meta: MasterMeta) -> dict[str, dict[str, str]]:
+    """Cartes de toutes les charnières, calculées en une passe (servies par /cards)."""
+    return {n: work_card(G, meta, n)
+            for n, d in G.nodes(data=True) if d.get("kind") == "work"}
+
+
 def node_detail(G: nx.Graph, meta: MasterMeta, node_id: str,
                 params: ProjectionParams) -> dict[str, Any]:
     """Construit la fiche d'un nœud : attributs, voisins par type, ouvrages liés,
@@ -373,16 +470,12 @@ def node_detail(G: nx.Graph, meta: MasterMeta, node_id: str,
         return True
 
     if d.get("kind") == "work":
-        entities = [G.nodes[n] for n in G.neighbors(node_id)]
-        by_type: dict[str, list[str]] = {}
-        for e in entities:
-            by_type.setdefault(e["type"], []).append(e["label"])
         return {
             "id": node_id, "label": d["label"], "type": WORK_TYPE, "kind": "work",
             "color": "#8A857B",
             "attributes": d.get("attributes", {}),
             "year": d.get("year"),
-            "neighbors_by_type": by_type,
+            "neighbors_by_type": entities_by_type(G, node_id),
             "works": [],
         }
 
@@ -398,7 +491,7 @@ def node_detail(G: nx.Graph, meta: MasterMeta, node_id: str,
         works.append({
             "id": w, "label": wd["label"], "year": wd.get("year"),
             "attributes": wd.get("attributes", {}),
-            "partners": _work_partners(G, w, exclude=node_id),
+            "partners": entities_by_type(G, w, exclude=node_id),
         })
         for nb in G.neighbors(w):
             if nb == node_id:
@@ -440,15 +533,3 @@ def initial_positions(G: nx.Graph, scale: float = 10.0) -> dict[str, list[float]
     pos = nx.spring_layout(G, seed=42, k=k, iterations=120)
     return {n: [round(float(xy[0]) * scale, 4), round(float(xy[1]) * scale, 4)]
             for n, xy in pos.items()}
-
-
-def _work_partners(G: nx.Graph, work: str, exclude: str) -> dict[str, list[str]]:
-    """Les autres entités d'un ouvrage, groupées par type (pour la fiche)."""
-    out: dict[str, list[str]] = {}
-    for nb in G.neighbors(work):
-        if nb == exclude:
-            continue
-        nd = G.nodes[nb]
-        if nd.get("kind") == "entity":
-            out.setdefault(nd["type"], []).append(nd["label"])
-    return out

@@ -49,6 +49,72 @@ ROLE_EDGE = "edge"
 ROLE_ATTRIBUTE = "attribute"
 ROLE_IGNORE = "ignore"
 
+# Nom par défaut de la charnière (l'unité qui relie les entités = une ligne).
+# Neutre, indépendant du fichier ; l'utilisateur peut le redéfinir.
+DEFAULT_UNIT = ("objet", "objets")
+
+# Noms de feuille trop génériques pour servir de nom d'unité → on retombe sur
+# « objet ». (Le nom de feuille n'est suggéré que s'il est parlant.)
+GENERIC_SHEET_NAMES = {
+    "feuille", "feuil", "sheet", "data", "données", "donnees", "tableau",
+    "table", "classeur", "export", "page", "import", "base",
+}
+
+
+def pluralize_fr(word: str) -> str:
+    """Pluriel français approximatif — suffit pour un nom d'unité court."""
+    w = word.strip()
+    if not w:
+        return w
+    low = w.lower()
+    if low[-1] in ("s", "x", "z"):
+        return w
+    if low.endswith(("eau", "au", "eu")):
+        return w + "x"   # tableau→tableaux, niveau→niveaux, jeu→jeux
+    return w + "s"
+
+
+# Noms français déjà invariants au pluriel : ils se terminent par « s » au singulier
+# (« un avis / des avis »). On ne leur retire donc pas le « s » final. Les terminaisons
+# en -x/-z sont déjà préservées par `singularize_fr` (il ne coupe qu'un « s »).
+INVARIANT_NOUNS = {
+    "avis", "repas", "cas", "pays", "corps", "temps", "mois", "bois", "bras",
+    "tas", "fois", "dos", "héros", "univers", "concours", "discours", "secours",
+    "succès", "progrès", "puits", "jus", "sens", "fils", "fonds", "pas", "colis",
+    "parcours", "palais", "relais", "vers", "tapis", "anchois", "velours",
+}
+
+
+def singularize_fr(word: str) -> str:
+    """Singulier français approximatif (retire un « s » final).
+
+    Épargne les noms déjà invariants au pluriel (avis, repas, prix…) et les
+    terminaisons en « -us » (bus, virus, corpus) qui sont souvent des singuliers."""
+    w = word.strip()
+    low = w.lower()
+    if low in INVARIANT_NOUNS:
+        return w
+    if len(w) > 3 and low.endswith("s") and not low.endswith("us"):
+        return w[:-1]
+    return w
+
+
+def default_unit_label(sheet_name: str | None) -> tuple[str, str]:
+    """Suggère (singulier, pluriel) pour le nom d'une ligne.
+
+    Dérivé du nom de feuille quand il est parlant (« Traductions » →
+    « traduction / traductions »), sinon « objet / objets ». On renvoie en
+    minuscules ; l'interface capitalise au besoin.
+    """
+    name = (sheet_name or "").strip()
+    low = name.lower()
+    if (not name or low in GENERIC_SHEET_NAMES
+            or re.fullmatch(r"(feuil|feuille|sheet|table|page|classeur)\s*\d*", low)):
+        return DEFAULT_UNIT
+    singular = singularize_fr(low)
+    plural = low if singular != low else pluralize_fr(low)
+    return (singular, plural)
+
 
 @dataclass
 class ColumnProfile:

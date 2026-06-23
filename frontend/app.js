@@ -31,14 +31,23 @@
     selected: null,
     lastGraph: null,
     layoutSig: null,
+    // Dernière configuration appliquée → restaurée si on rouvre l'écran des rôles.
+    appliedRoles: null,
+    appliedUnit: null,
+    appliedHingeKey: "",
+    cardFields: [],               // champs actuellement montrés sur la carte d'un livre
+    cardFieldsSel: null,          // sélection mémorisée (null = défaut adaptatif)
+    cardsLoaded: false,           // /cards déjà chargé pour le graphe courant ?
   };
 
   const $ = (id) => document.getElementById(id);
   const el = {};
   ["upload-screen", "dropzone", "file-input", "demo-btn", "upload-err",
    "roles-overlay", "roles-body", "roles-hint", "roles-build", "roles-cancel", "roles-status",
-   "app", "brand-sub", "search", "pivot-list", "layers-list", "hinge-layer", "reconfig",
+   "unit-singular", "unit-preview", "hinge-key",
+   "app", "brand-sub", "search", "pivot-list", "layers-list", "hinge-layer", "hinge-label", "reconfig",
    "adv", "adv-toggle", "seg-link", "seg-pivot", "seg-color", "seg-labels",
+   "card-fields", "card-fields-ctrl", "card-fields-note",
    "size-by", "layout-sel", "display-mode", "rail-foot",
    "yr-min", "yr-max", "yr-lo", "yr-hi", "yr-reset", "timewrap",
    "tl", "tl-hist", "tl-window", "tl-play", "tl-speed",
@@ -49,9 +58,16 @@
    "exp-image", "exp-close", "exp-status",
    "snapshots-btn", "snapshots-overlay", "snap-close", "snap-interval",
    "snap-cumulative", "snap-status", "snap-grid",
-   "chrono-btn", "chrono-overlay", "chrono-close", "chrono-title",
+   "chrono-btn", "chrono-overlay", "chrono-close", "chrono-title", "chrono-sub",
    "chrono-pivot", "chrono-color", "chrono-status", "chrono-scroll"
   ].forEach((id) => { el[id] = $(id); });
+
+  // Nom de la charnière (« objet / objets » par défaut). cap() capitalise pour
+  // les titres ; les comptes inline restent en minuscules.
+  const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+  const unitS = () => (State.summary && State.summary.unit_singular) || "objet";
+  const unitP = () => (State.summary && State.summary.unit_plural) || "objets";
+  const unitN = (n) => `${n} ${n > 1 ? unitP() : unitS()}`;   // « 3 livres » / « 1 livre »
 
   // ------------------------------------------------------------------ API
   async function api(path, opts) {
@@ -95,6 +111,10 @@
   async function onUploaded(up) {
     State.sessionId = up.session_id; State.filename = up.filename || "Démonstration";
     State.profile = await getJSON(`/profile?session_id=${State.sessionId}`);
+    // Nouveau fichier : on repart des suggestions (pas de la config du fichier précédent).
+    State.summary = null;
+    State.appliedRoles = null; State.appliedUnit = null; State.appliedHingeKey = "";
+    State.cardFieldsSel = null;
     showRoles();
     // Raccourci de validation : ?auto=1 construit directement avec les rôles suggérés.
     if (/[?&]auto=1/.test(location.search)) buildGraph();
@@ -104,11 +124,45 @@
   const ROLE_LABELS = { node: "Nœud", edge: "Lien", attribute: "Info", ignore: "Ignoré" };
   let workingRoles = {};
 
+  // Pluriel français approximatif (miroir de ingest.pluralize_fr) — sert à
+  // l'aperçu ; le pluriel officiel est recalculé côté serveur à la configuration.
+  function pluralizeFr(w) {
+    w = (w || "").trim();
+    if (!w) return "";
+    const last = w[w.length - 1].toLowerCase();
+    if ("sxz".includes(last)) return w;
+    if (/(eau|au|eu)$/i.test(w)) return w + "x";   // tableau→tableaux, jeu→jeux
+    return w + "s";
+  }
+
+  function updateUnitPreview() {
+    const p = pluralizeFr(el["unit-singular"].value);
+    el["unit-preview"].textContent = p ? `pluriel : ${p}` : "";
+  }
+
+  function initUnitField() {
+    el["unit-singular"].addEventListener("input", updateUnitPreview);
+    // Le choix de regroupement change le compte de nœuds réels → on réévalue.
+    el["hinge-key"].addEventListener("change", updateRolesHint);
+  }
+
   function showRoles() {
+    // Reprend la dernière config appliquée si elle existe, sinon les suggestions.
+    const applied = State.appliedRoles;
     workingRoles = {};
-    State.profile.columns.forEach((c) => { workingRoles[c.name] = c.suggested_role; });
+    State.profile.columns.forEach((c) => {
+      workingRoles[c.name] = (applied && applied[c.name] != null) ? applied[c.name] : c.suggested_role;
+    });
     el["roles-body"].innerHTML = "";
     State.profile.columns.forEach((c) => el["roles-body"].appendChild(rolesRow(c)));
+    // Nom de l'unité : valeur appliquée, sinon suggestion dérivée du nom de feuille.
+    const su = (State.profile && State.profile.suggested_unit) || { singular: "objet" };
+    el["unit-singular"].value = State.appliedUnit != null ? State.appliedUnit : su.singular;
+    updateUnitPreview();
+    // Colonnes pour le regroupement (clé d'identité de charnière) ; on restaure la sélection.
+    el["hinge-key"].innerHTML = `<option value="">(aucune — une ligne = une charnière)</option>` +
+      State.profile.columns.map((c) => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join("");
+    el["hinge-key"].value = State.appliedHingeKey || "";
     updateRolesHint();
     el["roles-overlay"].classList.remove("hidden");
   }
@@ -146,9 +200,21 @@
       el["roles-hint"].innerHTML +=
         `<br><span style="color:var(--sel)">« ${esc(tooUnique[0])} » n'a presque que des valeurs uniques — elle convient souvent mieux comme <b>lien</b> que comme nœud.</span>`;
     }
-    const ok = by.node.length > 0;
+    // La clé de regroupement est consommée par l'identité de la charnière : elle
+    // ne compte PAS comme entité affichée.
+    const hk = el["hinge-key"] ? el["hinge-key"].value : "";
+    const keyIsNode = hk && by.node.includes(hk);
+    if (keyIsNode) {
+      el["roles-hint"].innerHTML +=
+        `<br><span style="color:var(--sel)">« ${esc(hk)} » sert de <b>regroupement</b> : ` +
+        `elle ne sera pas affichée comme entité. Gardez au moins une <b>autre</b> colonne en « Nœud ».</span>`;
+    }
+    const effectiveNodes = by.node.filter((c) => c !== hk);
+    const ok = effectiveNodes.length > 0;
     el["roles-build"].disabled = !ok;
-    el["roles-status"].textContent = ok ? "" : "Choisissez au moins une colonne « Nœud ».";
+    el["roles-status"].textContent = ok ? "" : (keyIsNode
+      ? `« ${hk} » est la clé de regroupement : choisissez une autre colonne « Nœud ».`
+      : "Choisissez au moins une colonne « Nœud ».");
   }
 
   el["roles-cancel"].addEventListener("click", () => el["roles-overlay"].classList.add("hidden"));
@@ -158,8 +224,18 @@
   async function buildGraph() {
     el["roles-status"].innerHTML = `<span class="spinner"></span> Construction…`;
     try {
-      const cfg = await postJSON("/configure", { session_id: State.sessionId, roles: workingRoles });
+      const cfg = await postJSON("/configure", {
+        session_id: State.sessionId, roles: workingRoles,
+        unit_singular: el["unit-singular"].value,   // le pluriel est dérivé côté serveur
+        hinge_key: el["hinge-key"].value || null,   // regroupement de lignes (optionnel)
+      });
       State.summary = cfg.summary;
+      // Mémorise la config pour la restaurer si on rouvre l'écran des rôles.
+      State.appliedRoles = { ...workingRoles };
+      // Vide (ou espaces) = « non défini » : le backend retombe sur la suggestion,
+      // donc on mémorise null pour réafficher cette suggestion à la réouverture.
+      State.appliedUnit = el["unit-singular"].value.trim() || null;
+      State.appliedHingeKey = el["hinge-key"].value || "";
       el["roles-overlay"].classList.add("hidden");
       startApp();
     } catch (e) { el["roles-status"].textContent = "Erreur : " + e.message; }
@@ -190,13 +266,71 @@
       });
     }
 
+    // Libellés dérivés du nom d'unité choisi à la configuration.
+    el["hinge-label"].textContent = cap(unitP());
+    el["hinge-layer"].title = `Afficher les ${unitP()} comme nœuds-charnières`;
+    if (el["chrono-sub"]) el["chrono-sub"].textContent =
+      `Une ligne par entité ; chaque point est un ${unitS()} placé dans le temps.`;
+    NetView.setUnitLabels(unitS(), unitP());
+    // Le graphe vient d'être (re)construit → cartes invalidées, rechargées à la demande
+    // (au 1er affichage de la couche charnière) plutôt qu'à chaque cran du curseur.
+    State.cardsLoaded = false;
+    NetView.setCardData({});
+    if (State.showHinge) ensureCardData();
+
     buildPivotList();
     buildLayers();
+    buildCardFields();
     buildTimeline();
     toggleTemporalUI(State.fullYearMin != null);
     el["rail-foot"].textContent =
-      `${State.summary.n_works} ouvrages · ${State.summary.n_nodes_total} entités`;
+      `${State.summary.n_works} ${unitP()} · ${State.summary.n_nodes_total} entités`;
     refreshGraph();
+  }
+
+  // Champs affichés sur la carte d'un livre (charnière). Réglable à la volée :
+  // c'est purement de l'affichage, les valeurs sont déjà toutes envoyées par /graph.
+  function buildCardFields() {
+    const layers = State.summary.node_layers || [];
+    const attrs = State.summary.attr_cols || [];
+    const tc = State.summary.time_col;
+    const fields = [...layers, ...attrs];
+    if (tc && !fields.includes(tc)) fields.push(tc);
+    // Sélection : mémorisée (filtrée aux colonnes encore présentes) si l'utilisateur
+    // a déjà choisi ; sinon défaut adaptatif = entités liées + année (fiche biblio).
+    const sel = State.cardFieldsSel != null
+      ? new Set(State.cardFieldsSel.filter((f) => fields.includes(f)))
+      : new Set([...layers, tc].filter(Boolean));
+    el["card-fields"].innerHTML = "";
+    fields.forEach((f) => {
+      const row = document.createElement("label");
+      row.className = "cf";
+      row.innerHTML = `<input type="checkbox" ${sel.has(f) ? "checked" : ""}> <span>${esc(f)}</span>`;
+      row.querySelector("input").dataset.field = f;
+      row.querySelector("input").addEventListener("change", onCardFieldChange);
+      el["card-fields"].appendChild(row);
+    });
+    syncCardFields();              // applique sans écraser la mémoire
+    updateCardFieldsState();
+  }
+
+  function syncCardFields() {
+    State.cardFields = [...el["card-fields"].querySelectorAll("input")]
+      .filter((i) => i.checked).map((i) => i.dataset.field);
+    NetView.setCardFields(State.cardFields);
+  }
+
+  function onCardFieldChange() {
+    syncCardFields();
+    State.cardFieldsSel = State.cardFields.slice();   // mémorise le choix de l'utilisateur
+  }
+
+  // La carte d'un livre n'apparaît que si la charnière est affichée → on grise
+  // le contrôle (et on explique) tant que ce n'est pas le cas.
+  function updateCardFieldsState() {
+    const on = !!State.showHinge;
+    el["card-fields"].classList.toggle("inactive", !on);
+    if (el["card-fields-note"]) el["card-fields-note"].classList.toggle("show", !on);
   }
 
   // ------------------------------------------------------------- pivot & couches
@@ -241,6 +375,8 @@
     el["hinge-layer"].onclick = () => {
       State.showHinge = !State.showHinge;
       el["hinge-layer"].classList.toggle("off", !State.showHinge);
+      updateCardFieldsState();
+      if (State.showHinge) ensureCardData();   // 1re activation → charge les cartes
       refreshGraph();
     };
   }
@@ -454,6 +590,17 @@
     });
   }
 
+  // Cartes des charnières : invariantes par projection → chargées une seule fois
+  // (à la 1re activation de la couche charnière) et réutilisées par le rendu.
+  async function ensureCardData() {
+    if (State.cardsLoaded) return;
+    State.cardsLoaded = true;                  // évite les requêtes concurrentes
+    try {
+      const map = await getJSON("/cards?session_id=" + encodeURIComponent(State.sessionId));
+      NetView.setCardData(map);
+    } catch (e) { State.cardsLoaded = false; flash("Erreur cartes : " + e.message); }
+  }
+
   async function refreshGraph(opts) {
     opts = opts || {};
     try {
@@ -480,7 +627,20 @@
         NetView.setFocus(null);
       }
       if (State.selected && !data.nodes.find((n) => n.id === State.selected)) deselect();
+      if (!State.playing) hintDegenerate(data);
     } catch (e) { flash("Erreur : " + e.message); }
+  }
+
+  // Explique une vue vide de sens (0 nœud / 0 lien) au lieu de la laisser muette.
+  function hintDegenerate(data) {
+    const n = data.nodes.length, e = data.edges.length;
+    if (n === 0) {
+      flash("Aucun élément avec ces filtres — élargissez la plage d'années ou réaffichez des couches.");
+    } else if (e === 0 && n > 1) {
+      flash(State.linkMode === "cut" && !State.showHinge
+        ? "0 lien : en mode « se coupent » avec la charnière masquée, le réseau se déconnecte. Repassez en « se reportent », ou affichez la charnière."
+        : "0 lien : ces nœuds ne partagent rien dans la vue actuelle.");
+    }
   }
 
   // ------------------------------------------------------------- sélection
@@ -505,7 +665,7 @@
     const color = d.color || meta.color || "#8A857B";
     el["dhead"].style.background = color;
     el["d-title"].textContent = d.label;
-    el["d-sub"].textContent = d.kind === "work" ? "Ouvrage" : d.type;
+    el["d-sub"].textContent = d.kind === "work" ? cap(unitS()) : d.type;
 
     let html = "";
     if (d.kind === "work") {
@@ -513,7 +673,7 @@
       Object.entries(d.attributes || {}).forEach(([k, v]) => { html += stat(k, v); });
       Object.entries(d.neighbors_by_type || {}).forEach(([t, arr]) => { html += stat(t, arr.join(", ")); });
     } else {
-      html += stat("Ouvrages", `${d.work_count} ouvrage${d.work_count > 1 ? "s" : ""}`);
+      html += stat(cap(unitP()), unitN(d.work_count));
       if (d.period) html += stat("Période d'activité", d.period[0] === d.period[1] ? d.period[0] : `${d.period[0]} – ${d.period[1]}`);
       if (meta.community != null) html += stat("Communauté", "Groupe " + (meta.community + 1));
       if (meta.degree != null) html += stat("Centralité (degré)", meta.degree_raw + " liens" + (meta.size >= 16 ? " — nœud pivot" : ""));
@@ -521,7 +681,7 @@
         html += `<div class="stat"><div class="k">${esc(t)}</div><div class="v">${arr.slice(0, 12).map((x) => `<span class="dtag">${esc(x)}</span>`).join("")}</div></div>`;
       });
       if (d.works && d.works.length) {
-        html += `<div class="k" style="font-size:9.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-weight:bold;margin:6px 0 8px">Ouvrages</div>`;
+        html += `<div class="k" style="font-size:9.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-weight:bold;margin:6px 0 8px">${esc(cap(unitP()))}</div>`;
         d.works.forEach((w) => {
           const partners = Object.values(w.partners || {}).flat().slice(0, 3).join(" · ");
           html += `<div class="work"><div class="t">${esc(w.label)}</div><div class="s">${esc(partners)}${w.year ? " — " + w.year : ""}</div></div>`;
@@ -556,6 +716,7 @@
         session_id: State.sessionId, kind, format,
         dimensions: el["exp-dim"].value, labels: el["exp-labels"].value,
         title: State.filename, view: currentView(),
+        unit_singular: unitS(), unit_plural: unitP(),
       };
       // réseau temporel : on joint l'axe des années pour qu'il figure dans l'image
       if (kind === "image" && State.layout === "temporal" && State.fullYearMin != null) {
@@ -668,7 +829,7 @@
       svg += `<circle cx="${pos[n.id].x}" cy="${pos[n.id].y}" r="${r}" fill="${n.color}" stroke="#fff" stroke-width="${r * 0.2}"/>`;
     });
     cell.innerHTML =
-      `<div class="cap"><span class="per">${esc(panel.title)}</span><span class="cnt">${panel.count} ouvrage${panel.count > 1 ? "s" : ""}</span></div>` +
+      `<div class="cap"><span class="per">${esc(panel.title)}</span><span class="cnt">${esc(unitN(panel.count))}</span></div>` +
       `<svg viewBox="${vb}" preserveAspectRatio="xMidYMid meet" style="aspect-ratio:${(W + 2 * pad) / (H + 2 * pad)}">${svg}</svg>`;
     return cell;
   }
@@ -680,7 +841,8 @@
       const res = await api("/export", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: State.sessionId, kind: "small_multiples",
-          format: fmt, title: `Instantanés — ${State.filename}`, panels: snapPanels }),
+          format: fmt, title: `Instantanés — ${State.filename}`, panels: snapPanels,
+          unit_singular: unitS(), unit_plural: unitP() }),
       });
       downloadBlob(await res.blob(), `instantanes.${fmt}`);
       el["snap-status"].textContent = "Téléchargé ✓";
@@ -763,7 +925,8 @@
     try {
       const res = await api("/export", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: State.sessionId, kind: "chronology", format: fmt,
-          title: `Chronologie — ${chronoData.pivot_type}`, view: chronoData }) });
+          title: `Chronologie — ${chronoData.pivot_type}`, view: chronoData,
+          unit_singular: unitS(), unit_plural: unitP() }) });
       downloadBlob(await res.blob(), `chronologie.${fmt}`);
       el["chrono-status"].textContent = "Téléchargé ✓";
     } catch (e) { el["chrono-status"].textContent = "Échec : " + e.message; }
@@ -817,6 +980,7 @@
   // ------------------------------------------------------------------ boot
   initUpload();
   initControls();
+  initUnitField();
   // Raccourci de validation/démo : ?auto=1 charge la démo et construit la carte.
   if (/[?&]auto=1/.test(location.search)) loadDemo();
 })();

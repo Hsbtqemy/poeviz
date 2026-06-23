@@ -38,6 +38,9 @@
   let selected = null;        // nœud cliqué
   let labelsDensity = "pivots";
   let displayMode = "auto";   // auto | points | cards
+  let unitSingular = "objet", unitPlural = "objets";  // nom de la charnière (réglable)
+  let cardFields = [];        // colonnes à afficher sur la carte d'une charnière
+  let cardData = {};          // {id charnière: {champ: valeur}} — chargé une fois via /cards
   let lodMode = "labels";     // points | labels | cards (résolu selon zoom)
   let pivotCutoff = 0;        // taille mini pour étiqueter en mode "pivots"
   const pinned = new Set();   // cartes épinglées
@@ -319,10 +322,20 @@
       div.innerHTML = `<div class="band"></div><div class="body"><div class="t"></div><div class="s"></div></div><span class="pin-btn" title="Épingler">📌</span>`;
       div.querySelector(".band").style.background = a.baseColor;
       div.querySelector(".t").textContent = a.label;
-      const sub = a.kind === "work"
-        ? "Ouvrage"
-        : `${a.ntype || ""}${a.work_count ? " · " + a.work_count + " ouvrage" + (a.work_count > 1 ? "s" : "") : ""}`;
-      div.querySelector(".s").textContent = sub;
+      if (a.kind === "work") {
+        // Carte d'un livre : champs choisis par l'utilisateur (réglables à la volée).
+        // Les valeurs viennent de cardData (chargé une fois via /cards), pas du nœud.
+        const card = cardData[id];
+        const lines = [];
+        (cardFields || []).forEach((f) => {
+          const v = card && card[f];
+          if (v != null && v !== "") lines.push(`${escapeHtml(f)} : ${escapeHtml(String(v))}`);
+        });
+        div.querySelector(".s").innerHTML = lines.length ? lines.join("<br>") : escapeHtml(cap(unitSingular));
+      } else {
+        const sub = `${a.ntype || ""}${a.work_count ? " · " + a.work_count + " " + (a.work_count > 1 ? unitPlural : unitSingular) : ""}`;
+        div.querySelector(".s").textContent = sub;
+      }
       div.querySelector(".pin-btn").addEventListener("click", (ev) => {
         ev.stopPropagation();
         if (pinned.has(id)) pinned.delete(id); else pinned.add(id);
@@ -342,7 +355,7 @@
     if (!tooltipEl) return;
     const a = graph.getNodeAttributes(node);
     const p = sigma.graphToViewport({ x: a.x, y: a.y });
-    tooltipEl.innerHTML = `${escapeHtml(a.label)}<div class="t2">${escapeHtml(a.kind === "work" ? "Ouvrage" : (a.ntype || ""))}</div>`;
+    tooltipEl.innerHTML = `${escapeHtml(a.label)}<div class="t2">${escapeHtml(a.kind === "work" ? cap(unitSingular) : (a.ntype || ""))}</div>`;
     tooltipEl.style.left = p.x + "px";
     tooltipEl.style.top = p.y + "px";
     tooltipEl.style.opacity = "1";
@@ -417,6 +430,24 @@
   // -------------------------------------------------------- réglages dynamiques
   function setLabelsDensity(v) { labelsDensity = v; sigma.refresh(); }
   function setDisplayMode(v) { displayMode = v; updateLOD(); sigma.refresh(); scheduleCards(); }
+  function setUnitLabels(sing, plur) {
+    unitSingular = sing || "objet"; unitPlural = plur || "objets";
+    // Le libellé d'unité est figé dans le texte des cartes → on les reconstruit.
+    cardDivs.forEach((d) => d.remove()); cardDivs.clear();
+    if (sigma) { scheduleCards(); }
+  }
+  function setCardFields(fields) {
+    cardFields = fields || [];
+    // Force la reconstruction des cartes (leur contenu est figé à la création).
+    cardDivs.forEach((d) => d.remove()); cardDivs.clear();
+    if (sigma) scheduleCards();
+  }
+  function setCardData(map) {
+    cardData = map || {};
+    // Le texte d'une carte est figé à sa création → on les reconstruit.
+    cardDivs.forEach((d) => d.remove()); cardDivs.clear();
+    if (sigma) scheduleCards();
+  }
   function resize() { if (sigma) sigma.refresh(); scheduleCards(); }
 
   // --------------------------------------------------- extraction pour l'export
@@ -456,6 +487,7 @@
   }
   function rgbToHex(c) { return "#" + c.map((v) => v.toString(16).padStart(2, "0")).join(""); }
   function escapeHtml(s) { const d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }
+  function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
 
   function getPositions() {
     const out = {};
@@ -465,7 +497,7 @@
 
   window.NetView = {
     init, render, setHighlight, setFocus, applySearch, centerOnNodes,
-    setLabelsDensity, setDisplayMode, resize, getPositions,
+    setLabelsDensity, setDisplayMode, setUnitLabels, setCardFields, setCardData, resize, getPositions,
     getViewNodes, getViewEdges, neighborhood,
     getMetrics: () => ({ nodes: graph ? graph.order : 0, edges: graph ? graph.size : 0 }),
     temporalWidth: TEMPORAL_WIDTH,

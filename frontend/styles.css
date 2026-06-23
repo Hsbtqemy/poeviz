@@ -77,6 +77,17 @@ button{font-family:inherit;cursor:pointer}
 .hintbar{margin-top:6px;background:var(--panel);border:1px solid var(--line);border-radius:11px;
   padding:13px 16px;font-size:12.5px;font-family:system-ui,Arial,sans-serif;line-height:1.5}
 .hintbar b.n{color:var(--role-node)} .hintbar b.e{color:var(--role-edge)} .hintbar b.a{color:var(--role-attr)}
+.unit-field{margin-top:14px;font-family:system-ui,Arial,sans-serif}
+.unit-head{display:flex;flex-direction:column;gap:3px;margin-bottom:9px}
+.unit-head label{font-weight:bold;color:var(--ink);font-size:13px}
+.unit-help{color:var(--muted);font-style:italic;font-size:12px;line-height:1.45}
+.unit-inputs{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.unit-inputs input{width:170px;border:1.5px solid var(--line);border-radius:8px;
+  padding:7px 10px;font-size:13px;color:var(--ink);background:#fff}
+.unit-inputs select{border:1.5px solid var(--line);border-radius:8px;
+  padding:7px 10px;font-size:13px;color:var(--ink);background:#fff;max-width:320px}
+.unit-inputs input:focus,.unit-inputs select:focus{outline:none;border-color:var(--green)}
+.unit-preview{color:var(--muted);font-size:12px;font-style:italic}
 .modal-actions{margin-top:18px;display:flex;justify-content:space-between;align-items:center;gap:10px}
 
 /* --------------------------------------------------------------- App 3 zones */
@@ -129,6 +140,15 @@ button{font-family:inherit;cursor:pointer}
 .seg span.on{background:var(--ink);color:#fff}
 .ctrl select{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:#fff;
   color:var(--ink);font-family:inherit;font-size:12px}
+.card-fields{display:flex;flex-direction:column;gap:5px;max-height:160px;overflow:auto;
+  border:1px solid var(--line);border-radius:7px;padding:8px 9px;background:#fff}
+.cf{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--ink);
+  font-family:system-ui,Arial,sans-serif;cursor:pointer}
+.cf input{margin:0;cursor:pointer}
+.card-fields.inactive{opacity:.4;pointer-events:none}
+.cf-note{display:none;font-size:11px;color:var(--muted);font-style:italic;margin-top:5px;
+  font-family:system-ui,Arial,sans-serif}
+.cf-note.show{display:block}
 
 /* canvas */
 .canvas{flex:1;position:relative;min-width:0;display:flex;flex-direction:column;
@@ -200,7 +220,7 @@ button{font-family:inherit;cursor:pointer}
 .ncard .band{height:7px}
 .ncard .body{padding:6px 9px 8px}
 .ncard .t{font-size:11.5px;font-weight:bold;line-height:1.2}
-.ncard .s{font-size:10px;color:var(--muted);margin-top:2px}
+.ncard .s{font-size:10px;color:var(--muted);margin-top:3px;line-height:1.4}
 .ncard .pin-btn{position:absolute;top:3px;right:4px;font-size:11px;color:var(--muted);
   cursor:pointer;line-height:1;opacity:.6}
 .ncard.pinned .pin-btn{opacity:1;color:var(--sel)}

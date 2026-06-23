@@ -103,7 +103,9 @@ def render_image(nodes: list[dict[str, Any]], edges: list[dict[str, Any]],
 
 
 def render_small_multiples(panels: list[dict[str, Any]], fmt: str = "png",
-                           title: str | None = None) -> tuple[bytes, str]:
+                           title: str | None = None,
+                           unit_singular: str = "objet",
+                           unit_plural: str = "objets") -> tuple[bytes, str]:
     """Grille d'instantanés (petits multiples) : un mini-réseau par période, mêmes
     positions de nœuds et mêmes limites d'axes d'une vignette à l'autre, pour
     comparer les époques côte à côte. Exporte en PNG 300 DPI ou SVG."""
@@ -144,7 +146,8 @@ def render_small_multiples(panels: list[dict[str, Any]], fmt: str = "png",
         for s in ax.spines.values():
             s.set_color("#E0DBD0")
         cnt = panel.get("count")
-        sub = f"  ({cnt} ouvrage{'s' if (cnt or 0) > 1 else ''})" if cnt is not None else ""
+        unit = unit_plural if (cnt or 0) > 1 else unit_singular
+        sub = f"  ({cnt} {unit})" if cnt is not None else ""
         ax.set_title(str(panel.get("title", "")) + sub, color=INK, fontsize=9, loc="left")
 
     for ax in axes[n:]:
@@ -168,7 +171,9 @@ def render_small_multiples(panels: list[dict[str, Any]], fmt: str = "png",
 
 
 def render_chronology(chrono: dict[str, Any], fmt: str = "png",
-                      title: str | None = None) -> tuple[bytes, str]:
+                      title: str | None = None,
+                      unit_singular: str = "objet",
+                      unit_plural: str = "objets") -> tuple[bytes, str]:
     """Dot-plot chronologique : une entité par ligne, ses ouvrages dans le temps,
     un trait premier→dernier (durée d'activité), points colorés par attribut."""
     entities = chrono.get("entities", [])
@@ -205,9 +210,13 @@ def render_chronology(chrono: dict[str, Any], fmt: str = "png",
                           markerfacecolor=c, markeredgecolor="white", label=str(v))
                    for v, c in color_map.items()]
         ax.legend(handles=handles, loc="lower right", fontsize=8, frameon=False)
-    ax.set_title(title or f"Chronologie — {chrono.get('pivot_type', '')}",
+    ax.set_title(title or f"Chronologie des {unit_plural} — {chrono.get('pivot_type', '')}",
                  color=INK, fontsize=13, loc="left", pad=10)
     fig.tight_layout(pad=0.6)
+    # Rappelle l'unité (un point = un ouvrage), comme le sous-titre de l'écran. Posé
+    # après tight_layout ; `bbox_inches="tight"` agrandit l'image pour l'inclure.
+    fig.text(0.01, 0.01, f"Chaque point = un {unit_singular}.",
+             fontsize=8, color="#8A857B")
 
     buf = io.BytesIO(); fmt = fmt.lower()
     if fmt == "png":
@@ -253,7 +262,8 @@ def _draw_time_axis(ax, ta: dict[str, Any]) -> None:
     ax.set_xticks([((yr - ymin) / span) * w for yr in years])
     ax.set_xticklabels([str(y) for y in years], fontsize=8)
     ax.tick_params(axis="x", colors="#8A857B", length=4)
-    ax.set_xlabel("Année (moyenne des ouvrages liés)", color=INK, fontsize=10)
+    unit_plural = ta.get("unit_plural", "objets")
+    ax.set_xlabel(f"Année (moyenne des {unit_plural} liés)", color=INK, fontsize=10)
 
 
 def _autoscale(ax, xs, ys) -> None:
@@ -344,11 +354,29 @@ def metrics_xlsx(nodes: list[dict[str, Any]]) -> bytes:
     import pandas as pd
     cols = ["label", "type", "community", "degree", "betweenness",
             "eigenvector", "degree_raw", "work_count"]
-    df = pd.DataFrame([{c: n.get(c, "") for c in cols} for n in nodes], columns=cols)
+    # Seules les colonnes texte sont protégées contre l'injection de formule ;
+    # les colonnes numériques restent des nombres (triables dans Excel).
+    text_cols = {"label", "type"}
+    df = pd.DataFrame(
+        [{c: (_csv_safe(n.get(c, "")) if c in text_cols else n.get(c, "")) for c in cols}
+         for n in nodes], columns=cols)
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Métriques")
     return buf.getvalue()
+
+
+def _csv_safe(value: Any) -> Any:
+    """Neutralise l'injection de formule (Excel/Sheets) : une cellule TEXTE
+    commençant par = + - @ (ou tab/CR) est préfixée d'une apostrophe. Les nombres
+    (ex. coordonnée négative « -3.4 ») sont laissés intacts."""
+    s = "" if value is None else str(value)
+    if s[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        try:
+            float(s)          # un vrai nombre → on n'y touche pas
+        except ValueError:
+            return "'" + s
+    return s
 
 
 def _csv(cols: list[str], rows: list[dict[str, Any]]) -> bytes:
@@ -356,6 +384,6 @@ def _csv(cols: list[str], rows: list[dict[str, Any]]) -> bytes:
     writer = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
     writer.writeheader()
     for r in rows:
-        writer.writerow({c: r.get(c, "") for c in cols})
+        writer.writerow({c: _csv_safe(r.get(c, "")) for c in cols})
     # BOM utf-8 pour qu'Excel ouvre correctement les accents.
     return ("﻿" + buf.getvalue()).encode("utf-8")

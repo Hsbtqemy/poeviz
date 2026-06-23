@@ -42,6 +42,25 @@
       <thead><tr><th>Colonne détectée</th><th>Valeurs uniques</th><th style="text-align:right">Rôle</th></tr></thead>
       <tbody id="roles-body"></tbody>
     </table>
+    <div class="unit-field">
+      <div class="unit-head">
+        <label for="unit-singular">Comment nommer une ligne du tableur&nbsp;?</label>
+        <span class="unit-help">Chaque ligne (un livre, un film, un contrat…) relie entre elles les entités qu'elle contient. Ce nom apparaît dans toute l'interface.</span>
+      </div>
+      <div class="unit-inputs">
+        <input id="unit-singular" type="text" placeholder="objet" autocomplete="off" spellcheck="false">
+        <span class="unit-preview" id="unit-preview"></span>
+      </div>
+    </div>
+    <div class="unit-field">
+      <div class="unit-head">
+        <label for="hinge-key">Regrouper les lignes par (optionnel)</label>
+        <span class="unit-help">Si plusieurs lignes décrivent la même chose (ex. un livre en VO et sa traduction), choisissez la colonne qui porte leur identifiant commun : elles fusionnent en une seule charnière — reliées sans nœud parasite à l'écran.</span>
+      </div>
+      <div class="unit-inputs">
+        <select id="hinge-key"><option value="">(aucune — une ligne = une charnière)</option></select>
+      </div>
+    </div>
     <div class="hintbar" id="roles-hint"></div>
     <div class="modal-actions">
       <span class="sans" style="font-size:12px;color:var(--muted)" id="roles-status"></span>
@@ -77,8 +96,8 @@
     <div>
       <div class="grp-label">Couches visibles</div>
       <div id="layers-list"></div>
-      <label class="layer off" id="hinge-layer" title="Afficher les ouvrages comme nœuds-charnières">
-        <span class="tog"></span><span class="sw" style="background:#8A857B"></span>Ouvrages (charnière)
+      <label class="layer off" id="hinge-layer" title="Afficher les objets comme nœuds-charnières">
+        <span class="tog"></span><span class="sw" style="background:#8A857B"></span><span id="hinge-label">Objets</span> (charnière)
       </label>
     </div>
 
@@ -116,6 +135,11 @@
           <div class="seg" id="seg-labels">
             <span data-v="all">toutes</span><span data-v="pivots" class="on">pivots</span><span data-v="none">aucune</span>
           </div>
+        </div>
+        <div class="ctrl" id="card-fields-ctrl">
+          <label>Champs sur la carte (zoom rapproché)</label>
+          <div id="card-fields" class="card-fields"></div>
+          <div class="cf-note" id="card-fields-note">Affichez la charnière (couche ci-dessus) pour voir les cartes par ligne.</div>
         </div>
         <div class="ctrl">
           <label>Disposition</label>
@@ -277,7 +301,7 @@
     <div class="snap-head">
       <div>
         <h2 id="chrono-title">Chronologie</h2>
-        <div class="sub">Une ligne par entité ; chaque point est un ouvrage placé dans le temps.</div>
+        <div class="sub" id="chrono-sub">Une ligne par entité ; chaque point est un objet placé dans le temps.</div>
       </div>
       <button class="dclose" id="chrono-close" style="position:static;color:var(--ink)">✕</button>
     </div>

@@ -11,7 +11,9 @@ Un outil web **générique** qui transforme un tableur Excel de métadonnées (l
 
 **Générique = non lié à un fichier précis.** L'outil ingère n'importe quel `.xlsx` de structure raisonnable. Il détecte les colonnes, propose des rôles, et laisse l'utilisateur ajuster. Ne code RIEN en dur pour un jeu de données particulier.
 
-**Principe directeur, à respecter partout : ne rien figer qui puisse être rendu réglable.** Le choix des entités, l'axe d'organisation, le comportement des liens, les couches visibles, le mode d'affichage — tout est exposé comme paramètre.
+**Principe directeur, à respecter partout : ne rien figer qui puisse être rendu réglable.** Le choix des entités, l'axe d'organisation, le comportement des liens, les couches visibles, le mode d'affichage, **le nom de l'unité-charnière** — tout est exposé comme paramètre.
+
+**Terminologie.** Une *ligne* du tableur devient un nœud-charnière qui relie les entités qu'elle contient. Son nom affiché est **réglable** à la configuration (défaut « objet / objets », ou dérivé du nom de la feuille — « traduction », « film »…) et apparaît partout : interface et exports. Dans ce brief, écrit autour de la démo de traductions, on l'appelle souvent « ouvrage » : c'est l'exemple, **pas une valeur figée** (cf. §3.7).
 
 Un fichier de démonstration `data/traductions_demo.xlsx` est fourni (traductions franco-roumaines). Sers-t'en pour tester, **jamais** comme hypothèse en dur.
 
@@ -28,14 +30,16 @@ Un fichier de démonstration `data/traductions_demo.xlsx` est fourni (traduction
 - **Export image** : côté backend, **matplotlib** redessine la vue courante (positions reçues du front) en PNG 300 DPI + SVG.
 - **Données échangées** : JSON via l'API.
 
-Pas de base de données : tout vit en mémoire côté serveur le temps de la session (un graphe maître par fichier uploadé, gardé dans un cache en mémoire indexé par un id de session).
+Pas de base de données : tout vit en mémoire côté serveur le temps de la session (un graphe maître par fichier uploadé, gardé dans un cache en mémoire indexé par un id de session). Garde-fous (constantes en tête de `backend/main.py`) : sessions **plafonnées avec éviction LRU** (`MAX_SESSIONS`), **taille d'upload limitée** (`MAX_UPLOAD_MB`), et **métriques mises en cache par signature de projection** (`MAX_METRICS_CACHE`) pour ne pas relancer Louvain/centralités à chaque interaction.
+
+Tests : `pip install -r requirements-dev.txt` puis `pytest` (suite dans `tests/` — ingestion, projections, garde-fous, API de bout en bout).
 
 ---
 
 ## 3. Architecture (le cœur — lis attentivement)
 
 ### 3.1 Le graphe maître
-À l'upload, le backend construit **un seul graphe networkx complet** contenant TOUTES les entités possibles (toutes les colonnes-nœuds) + l'ouvrage comme nœud-charnière, avec tous les liens. Ce graphe maître ne change jamais après construction.
+À l'upload, le backend construit **un seul graphe networkx complet** contenant TOUTES les entités possibles (toutes les colonnes-nœuds) + la ligne du tableur comme nœud-charnière (l'« ouvrage » ; nom réglable, cf. §3.7), avec tous les liens. Ce graphe maître ne change jamais après construction.
 
 Toutes les vues affichées sont des **projections** de ce graphe : activer/masquer une couche, changer de pivot, masquer le nœud-charnière = filtrage/projection à la volée, **sans reconstruire** le graphe. C'est ce qui rend les changements instantanés.
 
@@ -68,6 +72,20 @@ Sélecteur listant **dynamiquement** les colonnes actuellement en rôle node, + 
 - **reorganize** : le pivot influence la disposition spatiale (le pivot et ses voisins se réorganisent autour).
 - **filter** : le pivot ne fait que centrer/mettre en évidence, la disposition reste stable.
 
+### 3.7 Nom de la charnière (réglable)
+Le nœud-charnière = une ligne du tableur. Son **nom affiché** se règle à la configuration : un seul champ (le singulier), le pluriel est **dérivé** (recalculé côté serveur). Défaut « objet / objets » ; si le nom de la feuille est parlant (« Traductions »), il est **pré-suggéré** (« traduction / traductions »). Ce nom remplace « ouvrage » **partout** : pied de barre latérale, panneau de détail, cartes, tooltips, toggle charnière, et exports (image, petits multiples, libellé de l'axe temporel).
+
+Constantes et heuristiques en tête de `ingest.py`, faciles à éditer : `DEFAULT_UNIT`, `GENERIC_SHEET_NAMES`, `pluralize_fr`, `singularize_fr`, `default_unit_label`. La pluralisation auto gère les cas courants (`+s`, `-eau/-au/-eu → -x`) ; les irréguliers (`-al → -aux`) ne sont pas couverts — on pourra rajouter un champ « pluriel » optionnel (le backend accepte déjà `unit_plural` explicite).
+
+### 3.8 Regrouper des lignes (clé d'identité de charnière)
+Par défaut, **une ligne = une charnière** (identité = numéro de ligne). On peut désigner une colonne comme **clé d'identité** (`hinge_key`) : les lignes partageant la même valeur **fusionnent en une seule charnière**. Cas d'usage : un livre en VO et sa traduction (deux lignes, même œuvre) → ils deviennent **un seul nœud-charnière** qui relie toutes leurs entités (auteurs, langues, traducteur, éditeurs), sans nœud-identifiant parasite à l'écran (la charnière est masquée par défaut).
+
+Détails : la colonne-clé est **consommée par l'identité** (exclue des rôles, jamais affichée comme entité). À la fusion, le label cumule les valeurs-lien (les deux titres), l'année prend la **plus ancienne** (première parution), les attributs cumulent leurs valeurs distinctes. `n_works` compte les charnières réelles (pas les lignes). Construit dans `graph.build_master_graph(..., hinge_key=...)`, exposé via `hinge_key` dans `/configure` et le résumé.
+
+> Alternative **sans regroupement** : laisser la colonne-clé en rôle **nœud** puis **masquer sa couche** — en mode *report* elle relie ses voisins en coulisses, sans s'afficher. Plus souple (chaque ligne garde sa propre année), mais il faut penser à masquer la couche.
+>
+> À ne pas confondre avec le futur rôle **« relation »** (lien dirigé et étiqueté entité→entité) : ici on **fusionne** des lignes, on ne crée pas de flèche.
+
 ---
 
 ## 4. Analyse réseau (backend)
@@ -92,7 +110,7 @@ Reproduis l'esprit des maquettes fournies dans `design/` (captures PNG + HTML). 
 ### 5.2 Interactions réseau
 - Clic sur un nœud → sélection : son voisinage s'illumine (arêtes + voisins en évidence), le reste s'estompe ; le panneau de détail s'ouvre.
 - Survol → tooltip léger (nom + type).
-- **Niveau de détail selon le zoom** : dézoomé = points colorés ; zoom intermédiaire = points + étiquettes ; zoom rapproché = nœuds-« cartes » (petite carte avec titre + 2-3 infos). Plus un réglage global **forçage** : auto / toujours points / toujours cartes. Plus **épinglage** d'une carte sur un nœud précis.
+- **Niveau de détail selon le zoom** : dézoomé = points colorés ; zoom intermédiaire = points + étiquettes ; zoom rapproché = nœuds-« cartes » (petite carte avec titre + 2-3 infos). Plus un réglage global **forçage** : auto / toujours points / toujours cartes. Plus **épinglage** d'une carte sur un nœud précis. Les **champs affichés sur la carte d'une charnière** (livre) sont **réglables à la volée** (cases à cocher en Options avancées) : `/graph` joint toutes les valeurs possibles du nœud-charnière (entités liées par type + attributs + année) dans `node.card`, le front choisit lesquelles montrer (`NetView.setCardFields`).
 - Recherche → filtre/centre sur les nœuds correspondants.
 - Curseur temporel → ne montre que les ouvrages (et entités/liens dérivés) dans la plage d'années choisie ; le réseau se recompose. Les positions des nœuds restent stables d'une plage à l'autre (ne pas relancer un layout complet à chaque cran : calcule les positions une fois sur le graphe complet, réutilise-les).
 
@@ -114,12 +132,12 @@ Destination première des images : **intégration dans Word** → PNG net + SVG 
 
 ## 7. API (esquisse, adapte si besoin mais garde REST clair)
 - `POST /upload` (xlsx) → `{session_id, sheets[]}`
-- `GET /profile?session_id&sheet` → colonnes + type + unicité + rôle suggéré
-- `POST /configure` `{session_id, roles{col:role}, separators?}` → construit le graphe maître, renvoie un résumé
+- `GET /profile?session_id&sheet` → colonnes + type + unicité + rôle suggéré + `suggested_unit` (nom de ligne dérivé de la feuille)
+- `POST /configure` `{session_id, roles{col:role}, separators?, unit_singular?, unit_plural?, hinge_key?}` → construit le graphe maître, renvoie un résumé (incluant `unit_singular`/`unit_plural`/`hinge_key`)
 - `GET /graph?session_id&pivot&layers&link_mode&color_by&year_min&year_max` → nœuds+arêtes projetés (avec positions, taille, couleur, cluster) pour Sigma
 - `GET /node/{id}?session_id` → détail d'un nœud (attributs, stats, ouvrages liés)
 - `GET /metrics?session_id&...` → tableau des métriques
-- `POST /export` `{session_id, view_state, scope, format, dimensions, labels}` → fichier
+- `POST /export` `{session_id, view_state, scope, format, dimensions, labels, unit_singular?, unit_plural?}` → fichier
 
 ---
 
