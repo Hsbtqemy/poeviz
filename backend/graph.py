@@ -58,6 +58,51 @@ NAME_COLOR_HINTS = [
 ]
 
 
+# Dégradé « ancien → récent » pour la coloration par époque (bleu → ambre).
+EPOCH_STOPS = [(0.0, "#3B6FA8"), (0.5, "#9C8E5A"), (1.0, "#C07A1A")]
+EPOCH_NEUTRAL = "#C9C3B6"   # nœud sans année connue
+
+
+def epoch_color(year: float | None, ymin: int | None, ymax: int | None) -> str:
+    """Couleur d'un nœud selon son année (dégradé continu ancien→récent)."""
+    if year is None or ymin is None or ymax is None or ymax <= ymin:
+        return EPOCH_NEUTRAL
+    t = max(0.0, min(1.0, (year - ymin) / (ymax - ymin)))
+    # Trouve le segment de dégradé contenant t et interpole.
+    for i in range(len(EPOCH_STOPS) - 1):
+        p0, c0 = EPOCH_STOPS[i]
+        p1, c1 = EPOCH_STOPS[i + 1]
+        if t <= p1:
+            f = 0.0 if p1 == p0 else (t - p0) / (p1 - p0)
+            return _lerp_hex(c0, c1, f)
+    return EPOCH_STOPS[-1][1]
+
+
+def _lerp_hex(a: str, b: str, f: float) -> str:
+    ca, cb = _hex_rgb(a), _hex_rgb(b)
+    return "#" + "".join(f"{round(ca[i] + (cb[i] - ca[i]) * f):02x}" for i in range(3))
+
+
+def _hex_rgb(h: str) -> tuple[int, int, int]:
+    h = h.lstrip("#")
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+
+def node_mean_year(G: nx.Graph, node_id: str, data: dict) -> float | None:
+    """Année moyenne d'activité d'un nœud (moyenne des années de ses ouvrages
+    actifs). Pour un nœud-ouvrage, c'est sa propre année."""
+    if data.get("kind") == "work":
+        return data.get("year")
+    years: list[int] = []
+    for row in data.get("work_rows", []) or []:
+        wid = f"work::{row}"
+        if wid in G:
+            y = G.nodes[wid].get("year")
+            if y is not None:
+                years.append(y)
+    return (sum(years) / len(years)) if years else None
+
+
 @dataclass
 class MasterMeta:
     """Tout ce qu'il faut savoir d'un graphe maître pour le projeter."""

@@ -44,7 +44,7 @@
    "tl", "tl-hist", "tl-window", "tl-play", "tl-speed",
    "seg-timemode", "ctrl-window", "window-width", "window-width-val",
    "export-btn", "share-btn", "detail", "dhead", "d-title", "d-sub", "dbody", "dclose",
-   "statusline",
+   "statusline", "epoch-legend", "el-min", "el-max", "el-bar", "time-axis",
    "export-overlay", "exp-scope", "exp-hops", "exp-format", "exp-dim", "exp-labels",
    "exp-image", "exp-close", "exp-status",
    "snapshots-btn", "snapshots-overlay", "snap-close", "snap-interval",
@@ -461,6 +461,7 @@
       });
       State.layoutSig = sig;
       NetView.setLabelsDensity(State.labels);
+      updateEpochLegend(data.epoch_legend);
       // pivot en mode « filtre seul » : on met en évidence + centre, sans relayouter
       if (State.pivot && State.pivotMode === "filter") {
         const ids = data.nodes.filter((n) => n.type === State.pivot).map((n) => n.id);
@@ -687,6 +688,14 @@
   function esc(s) { const d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
   function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+  function updateEpochLegend(legend) {
+    if (State.colorBy !== "epoch" || !legend) { el["epoch-legend"].classList.add("hidden"); return; }
+    el["epoch-legend"].classList.remove("hidden");
+    el["el-min"].textContent = legend.year_min;
+    el["el-max"].textContent = legend.year_max;
+    const stops = (legend.stops || []).map((s) => `${s.color} ${Math.round(s.pos * 100)}%`).join(",");
+    if (stops) el["el-bar"].style.background = `linear-gradient(90deg,${stops})`;
+  }
 
   // ------------------------------------------------------------------ boot
   initUpload();

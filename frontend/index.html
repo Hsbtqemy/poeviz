@@ -100,7 +100,7 @@
         <div class="ctrl">
           <label>Couleur des nœuds</label>
           <div class="seg" id="seg-color">
-            <span data-v="type" class="on">par type</span><span data-v="community">par communauté</span>
+            <span data-v="type" class="on">type</span><span data-v="community">communauté</span><span data-v="epoch">époque</span>
           </div>
         </div>
         <div class="ctrl">
@@ -174,6 +174,13 @@
       <div id="cards"></div>
       <div id="tooltip"></div>
       <div class="statusline" id="statusline"></div>
+      <div class="epoch-legend hidden" id="epoch-legend">
+        <span class="el-lab" id="el-min">—</span>
+        <span class="el-bar" id="el-bar"></span>
+        <span class="el-lab" id="el-max">—</span>
+        <span class="el-cap">époque (année moyenne)</span>
+      </div>
+      <div class="time-axis hidden" id="time-axis"></div>
     </div>
     <div class="hint">Cliquez un nœud pour son détail · molette pour zoomer · glissez le fond pour déplacer · glissez un nœud pour le repositionner</div>
   </main>

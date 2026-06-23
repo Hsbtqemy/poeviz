@@ -171,6 +171,21 @@ button{font-family:inherit;cursor:pointer}
 .statusline{position:absolute;left:14px;bottom:40px;font-family:system-ui,Arial,sans-serif;
   font-size:11px;color:var(--muted);background:rgba(251,249,244,.8);padding:5px 9px;border-radius:7px;
   border:1px solid var(--line);pointer-events:none}
+/* légende du dégradé par époque */
+.epoch-legend{position:absolute;right:16px;bottom:14px;display:flex;align-items:center;gap:8px;
+  background:rgba(251,249,244,.92);border:1px solid var(--line);border-radius:9px;padding:7px 11px;
+  font-family:system-ui,Arial,sans-serif;font-size:11px;color:var(--muted);pointer-events:none}
+.epoch-legend .el-bar{width:120px;height:9px;border-radius:5px;
+  background:linear-gradient(90deg,#3B6FA8,#9C8E5A,#C07A1A)}
+.epoch-legend .el-lab{color:var(--ink);font-weight:bold}
+.epoch-legend .el-cap{margin-left:4px;font-style:italic}
+/* axe des années (réseau temporel) */
+.time-axis{position:absolute;left:0;right:0;bottom:0;height:26px;pointer-events:none;
+  font-family:system-ui,Arial,sans-serif;font-size:10px;color:var(--muted)}
+.time-axis .tick{position:absolute;bottom:4px;transform:translateX(-50%);text-align:center}
+.time-axis .tick::before{content:"";position:absolute;left:50%;bottom:13px;width:1px;height:7px;
+  background:var(--line)}
+.time-axis .axis-line{position:absolute;left:0;right:0;bottom:17px;height:1px;background:var(--line)}
 
 /* tooltip */
 #tooltip{position:absolute;z-index:30;pointer-events:none;background:var(--ink);color:#fff;

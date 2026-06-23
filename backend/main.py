@@ -123,7 +123,10 @@ def build_view(session: Session, params: graph.ProjectionParams,
     for n, d in P.nodes(data=True):
         nm = per_node[n]
         size = 5.0 + 17.0 * ((raw[n] - lo) / span)
-        if color_by == "community":
+        my = graph.node_mean_year(G, n, d)
+        if color_by == "epoch":
+            color = graph.epoch_color(my, meta.year_min, meta.year_max)
+        elif color_by == "community":
             color = analysis.community_color(nm["community"])
         elif d.get("kind") == "work":
             color = "#8A857B"
@@ -137,6 +140,7 @@ def build_view(session: Session, params: graph.ProjectionParams,
             "kind": d.get("kind"),
             "color": color,
             "size": round(size, 2),
+            "mean_year": round(my, 1) if my is not None else None,
             "x": pos[0],
             "y": pos[1],
             "degree": nm["degree"],
@@ -159,6 +163,10 @@ def build_view(session: Session, params: graph.ProjectionParams,
         "node_layers": meta.node_cols,
         "color_by": color_by,
         "size_by": size_key,
+        "epoch_legend": {
+            "year_min": meta.year_min, "year_max": meta.year_max,
+            "stops": [{"pos": p, "color": c} for p, c in graph.EPOCH_STOPS],
+        } if color_by == "epoch" else None,
     }
 
 
