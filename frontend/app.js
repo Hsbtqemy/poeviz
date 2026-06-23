@@ -209,6 +209,18 @@
         `<br><span style="color:var(--sel)">« ${esc(hk)} » sert de <b>regroupement</b> : ` +
         `elle ne sera pas affichée comme entité. Gardez au moins une <b>autre</b> colonne en « Nœud ».</span>`;
     }
+    // Avertissement : une clé à peu de valeurs n'est pas un identifiant d'œuvre —
+    // elle fusionnerait tout en quelques méga-charnières reliant presque tout.
+    if (hk) {
+      const col = (State.profile.columns || []).find((c) => c.name === hk);
+      const rows = State.profile.n_rows || 0;
+      if (col && rows && col.n_unique > 0 && (col.n_unique <= 2 || rows / col.n_unique > 4)) {
+        el["roles-hint"].innerHTML +=
+          `<br><span style="color:var(--sel)">« ${esc(hk)} » n'a que ${col.n_unique} valeur(s) distincte(s) → ` +
+          `${col.n_unique} charnière(s) qui relieraient presque tout. Une clé doit <b>identifier une œuvre</b> ` +
+          `(≈ une valeur par ligne), pas une catégorie (langue, genre, réédition…).</span>`;
+      }
+    }
     const effectiveNodes = by.node.filter((c) => c !== hk);
     const ok = effectiveNodes.length > 0;
     el["roles-build"].disabled = !ok;
