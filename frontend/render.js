@@ -27,9 +27,10 @@
   let graph = null;
   let cardsEl = null, tooltipEl = null, statusEl = null, timeAxisEl = null;
   let callbacks = {};
-  const posCache = Object.create(null);   // id -> {x,y} (persistant)
+  const posCache = Object.create(null);   // id -> {x,y} (positions vivantes, persistant)
+  const structPos = Object.create(null);  // id -> {x,y} (dernière dispo structurelle force/circ/random)
 
-  // mode « réseau temporel » : X contraint par le temps, Y anti-collision
+  // mode « réseau temporel » : X = temps, Y = celui de la disposition force (préservé)
   const TEMPORAL_WIDTH = 1200;
   let temporalMode = false, tYearMin = null, tYearMax = null;
 
@@ -167,7 +168,9 @@
     if (graph.order === 0) return;
     if (kind === "temporal") {
       temporalLayout((opts && opts.yearMin), (opts && opts.yearMax));
-    } else if (kind === "circular" && basicLayouts.circular) {
+      return;
+    }
+    if (kind === "circular" && basicLayouts.circular) {
       basicLayouts.circular.assign(graph, { scale: 10 });
     } else if (kind === "random" && basicLayouts.random) {
       basicLayouts.random.assign(graph, { scale: 20, center: 0 });
@@ -179,45 +182,42 @@
       settings.adjustSizes = true;
       FA2.assign(graph, { iterations: Math.min(420, 120 + graph.order * 3), settings });
     }
+    // Mémorise cette disposition « structurelle » : le mode temporel réutilisera
+    // son Y pour garder la MÊME carte, juste glissée sur l'axe du temps.
+    graph.forEachNode((id, a) => { structPos[id] = { x: a.x, y: a.y }; });
   }
 
-  // Réseau temporel : X = année moyenne ; Y = répartition anti-collision (beeswarm).
-  // On ne lance PAS ForceAtlas2 ici — les X resteraient libres sinon.
+  // Réseau temporel : on GARDE la disposition force des boules (leur Y) et on
+  // se contente de fixer X selon l'année moyenne. La carte reste reconnaissable,
+  // simplement étirée/calée sur un axe temporel. On ne relance PAS ForceAtlas2.
   function temporalLayout(ymin, ymax) {
-    if (ymin == null || ymax == null) { layout("force"); return; }   // pas de temps → repli
+    if (ymin == null || ymax == null) { return; }
+    // Si aucune disposition structurelle mémorisée, en calculer une d'abord.
+    if (!hasStruct() && FA2) {
+      const s = FA2.inferSettings ? FA2.inferSettings(graph) : {};
+      FA2.assign(graph, { iterations: 200, settings: s });
+      graph.forEachNode((id, a) => { structPos[id] = { x: a.x, y: a.y }; });
+    }
     const span = (ymax - ymin) || 1;
+    // Étendue verticale de la disposition structurelle → mise à l'échelle.
+    let lo = Infinity, hi = -Infinity;
+    graph.forEachNode((id) => { const p = structPos[id]; if (p) { lo = Math.min(lo, p.y); hi = Math.max(hi, p.y); } });
+    if (!isFinite(lo)) { lo = -1; hi = 1; }
+    const yMid = (lo + hi) / 2, yScale = (TEMPORAL_WIDTH * 0.5) / ((hi - lo) || 1);
     let maxWC = 1;
     graph.forEachNode((id, a) => { maxWC = Math.max(maxWC, a.work_count || 1); });
-    const nodes = [];
     graph.forEachNode((id, a) => {
       const my = a.mean_year;
-      const x = (my == null) ? -100 : ((my - ymin) / span) * TEMPORAL_WIDTH;
-      const wc = a.work_count || 1;
-      nodes.push({ id, x, wc, r: 12 + 30 * (wc / maxWC) });   // rayon de collision (unités graphe)
-    });
-    nodes.sort((a, b) => a.x - b.x);
-    const placed = [];
-    nodes.forEach((p) => {
-      const step = Math.max(9, p.r * 0.85);
-      let y = 0, k = 0, ok = false;
-      while (!ok && k < 800) {
-        const cands = k === 0 ? [0] : [k * step, -k * step];
-        for (const cand of cands) { if (!collides(p, cand, placed)) { y = cand; ok = true; break; } }
-        k++;
-      }
-      p.y = y; placed.push(p);
-      graph.setNodeAttribute(p.id, "x", p.x);
-      graph.setNodeAttribute(p.id, "y", -p.y);                 // y vers le haut
-      graph.setNodeAttribute(p.id, "size", 5 + 16 * (p.wc / maxWC));   // taille = nb d'ouvrages
+      const x = (my == null) ? -120 : ((my - ymin) / span) * TEMPORAL_WIDTH;
+      const p = structPos[id];
+      const fy = p ? p.y : (a.y || 0);
+      graph.setNodeAttribute(id, "x", x);
+      graph.setNodeAttribute(id, "y", (fy - yMid) * yScale);   // Y de la carte force, préservé
+      graph.setNodeAttribute(id, "size", 5 + 16 * ((a.work_count || 1) / maxWC));  // taille = nb d'ouvrages
     });
   }
 
-  function collides(p, y, placed) {
-    for (const q of placed) {
-      if (Math.abs(q.x - p.x) < (q.r + p.r) && Math.abs(q.y - y) < (q.r + p.r)) return true;
-    }
-    return false;
-  }
+  function hasStruct() { for (const k in structPos) return true; return false; }
 
   function applyTemporalSizing() {
     let maxWC = 1;
