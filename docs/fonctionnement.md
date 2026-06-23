@@ -176,11 +176,11 @@ Concrètement, en mode *report*, on prend chaque groupe connexe de nœuds masqu�
 relie « en clique » ses voisins visibles. C'est une **projection de graphe biparti
 vers un graphe à un mode**, technique classique en analyse de réseaux.
 
-- **Lentille (3 états par couche)** : chaque type peut être *affiché*, *connecteur*
-  (invisible mais relie) ou *masqué* (exclu). On découvre ainsi « auteurs reliés via
-  traducteur » puis « via éditeur » **en direct**, sans reconstruire (`connector_layers`).
-  Une colonne *info* (genre, langue…) peut aussi servir de lentille sans devenir un
-  nœud (`connector_attrs`, jetons virtuels) — réversible (retour en simple info).
+- **Lentille (3 états par couche, symétrie complète)** : **toute** colonne non-ignorée
+  (titre, info, année comprises) est un type de nœud du maître et se règle *affiché* /
+  *connecteur* / *hors* **en direct**, sans reconstruire (`connector_layers`). On découvre
+  ainsi « auteurs reliés via traducteur » puis « via genre », ou on **affiche** un
+  genre/lieu comme points. Le rôle ne donne que l'état par défaut (`meta.layer_cols`).
 
 > **Méthodologie : projeter, pas reconstruire.** Le graphe maître est immuable ;
 > changer un réglage ne fait que recalculer une projection. D'où l'instantanéité.

@@ -12,8 +12,7 @@
     sessionId: null, filename: null,
     profile: null, summary: null,
     layersOn: new Set(),
-    connectors: new Set(),       // couches-NŒUD « connecteur » (relient sans être affichées)
-    connectorAttrs: new Set(),   // colonnes-INFO utilisées comme lentille
+    connectors: new Set(),       // couches « connecteur » (relient sans être affichées)
     pivot: null,                 // type d'entité (colonne) ou null
     linkMode: "report",
     pivotMode: "reorganize",
@@ -263,7 +262,6 @@
 
     State.layersOn = new Set(State.summary.node_layers);
     State.connectors = new Set();          // aucune lentille au départ (tout affiché)
-    State.connectorAttrs = new Set();
     State.pivot = null;
     State.fullYearMin = State.summary.year_min; State.fullYearMax = State.summary.year_max;
     State.yearMin = State.summary.year_min; State.yearMax = State.summary.year_max;
@@ -386,53 +384,40 @@
     else if (State.connectors.has(t)) { State.connectors.delete(t); }
     else { State.layersOn.add(t); }
   }
-  const LAYER_STATE_LABEL = { shown: "affiché", connector: "relie", off: "masqué" };
+  const LAYER_STATE_LABEL = { shown: "affiché", connector: "relie", off: "hors" };
 
+  // Panneau unifié : TOUTE colonne non-ignorée (titre, info, année comprises) cycle
+  // affiché → relie → hors. Le rôle d'origine donne juste l'état par défaut.
   function buildLayers() {
     el["layers-list"].innerHTML = "";
-    State.summary.node_layers.forEach((t) => {
+    (State.summary.layer_cols || []).forEach((L) => {
+      const t = L.col;
       const row = document.createElement("div");
+      if (!L.activable) {
+        row.className = "layer3 disabled";
+        row.innerHTML = `<span class="sw" style="background:#C9C3B6"></span>` +
+          `<span class="nm">${esc(t)}</span><span class="st">trop de valeurs</span>` +
+          `<span class="ct">${L.n_unique}</span>`;
+        row.title = `« ${t} » a trop de valeurs distinctes pour être un nœud/connecteur`;
+        el["layers-list"].appendChild(row);
+        return;
+      }
       const color = State.summary.palette[t] || "#8A857B";
-      const count = State.summary.type_counts[t] || 0;
       const paint = () => {
         const st = layerState(t);
-        row.className = "layer3 " + st;
+        row.className = "layer3 " + st + (L.warn ? " warn" : "");
         row.innerHTML = `<span class="sw" style="background:${color}"></span>` +
           `<span class="nm">${esc(t)}</span>` +
           `<span class="st">${LAYER_STATE_LABEL[st]}</span>` +
-          `<span class="ct">${count}</span>`;
+          `<span class="ct">${State.summary.type_counts[t] || L.n_unique}</span>`;
       };
-      row.title = "Cliquer pour cycler : affiché → relie (lentille) → masqué";
+      row.title = L.warn
+        ? "Quasi-unique : « affiché » donne des nœuds isolés. Clic : affiché → relie → hors"
+        : "Cliquer pour cycler : affiché → relie (lentille) → hors";
       row.addEventListener("click", () => { cycleLayer(t); paint(); refreshGraph(); });
       paint();
       el["layers-list"].appendChild(row);
     });
-    // Infos utilisables comme lentille : relier par un attribut (Genre, Langue…)
-    // sans le transformer en nœud. Bascule info ↔ relie (réversible).
-    const lensAttrs = State.summary.lens_attrs || [];
-    if (lensAttrs.length) {
-      const hdr = document.createElement("div");
-      hdr.className = "grp-sub";
-      hdr.textContent = "Relier aussi par (infos)";
-      el["layers-list"].appendChild(hdr);
-      lensAttrs.forEach((c) => {
-        const row = document.createElement("div");
-        const paint = () => {
-          const on = State.connectorAttrs.has(c);
-          row.className = "layer3 attr " + (on ? "connector" : "off");
-          row.innerHTML = `<span class="sw attr-sw"></span><span class="nm">${esc(c)}</span>` +
-            `<span class="st">${on ? "relie" : "info"}</span>`;
-        };
-        row.title = "Cliquer : info ↔ relie (lentille, sans devenir un nœud)";
-        row.addEventListener("click", () => {
-          if (State.connectorAttrs.has(c)) State.connectorAttrs.delete(c);
-          else State.connectorAttrs.add(c);
-          paint(); refreshGraph();
-        });
-        paint();
-        el["layers-list"].appendChild(row);
-      });
-    }
     el["hinge-layer"].classList.toggle("off", !State.showHinge);
     el["hinge-layer"].onclick = () => {
       State.showHinge = !State.showHinge;
@@ -640,7 +625,6 @@
     // Toujours envoyé (même vide) → sémantique « lentille » : seules ces couches
     // relient ; les couches masquées non-connectrices sont exclues.
     p.set("connectors", [...State.connectors].join(","));
-    p.set("connector_attrs", [...State.connectorAttrs].join(","));
     p.set("link_mode", State.linkMode);
     p.set("show_hinge", State.showHinge);
     p.set("color_by", State.colorBy);
@@ -885,7 +869,6 @@
       const p = new URLSearchParams({
         session_id: State.sessionId, layers: [...State.layersOn].join(","),
         connectors: [...State.connectors].join(","),   // même lentille que la vue courante
-        connector_attrs: [...State.connectorAttrs].join(","),
         link_mode: State.linkMode, show_hinge: State.showHinge,
         color_by: State.colorBy, size_by: State.sizeBy, year_min: lo, year_max: b,
       });

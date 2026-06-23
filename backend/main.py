@@ -122,24 +122,20 @@ class ExportBody(BaseModel):
 def parse_projection(layers: str | None, link_mode: str, show_hinge: bool,
                      year_min: int | None, year_max: int | None,
                      pivot: str | None,
-                     connectors: str | None = None,
-                     connector_attrs: str | None = None) -> graph.ProjectionParams:
+                     connectors: str | None = None) -> graph.ProjectionParams:
     layer_list = None
     if layers is not None and layers != "":
         layer_list = [x for x in layers.split(",") if x]
-    # Connecteurs : ABSENT (None) = tous les types masqués relient (rétro-compat).
-    # PRÉSENT même vide ("") = liste explicite → seuls ces types relient, les
-    # autres types masqués sont exclus (mode lentille piloté par le front).
+    # Connecteurs : ABSENT (None) = seuls les types NŒUD masqués relient (rétro-compat).
+    # PRÉSENT même vide ("") = liste explicite → seuls ces types relient, les autres
+    # types masqués sont exclus (mode lentille piloté par le front).
     connector_list = None
     if connectors is not None:
         connector_list = [x for x in connectors.split(",") if x]
-    attr_list = None
-    if connector_attrs is not None:
-        attr_list = [x for x in connector_attrs.split(",") if x]
     return graph.ProjectionParams(
         layers=layer_list, link_mode=link_mode, show_hinge=show_hinge,
         year_min=year_min, year_max=year_max, pivot=pivot or None,
-        connector_layers=connector_list, connector_attrs=attr_list,
+        connector_layers=connector_list,
     )
 
 
@@ -155,7 +151,6 @@ def build_view(session: Session, params: graph.ProjectionParams,
     cache_key = (
         tuple(sorted(params.layers)) if params.layers is not None else None,
         tuple(sorted(params.connector_layers)) if params.connector_layers is not None else None,
-        tuple(sorted(params.connector_attrs)) if params.connector_attrs is not None else None,
         params.link_mode, params.show_hinge, params.year_min, params.year_max, size_by,
     )
     cache = session.metrics_cache
@@ -367,12 +362,11 @@ def get_graph(
     year_min: int | None = None,
     year_max: int | None = None,
     connectors: str | None = None,
-    connector_attrs: str | None = None,
 ) -> dict[str, Any]:
     session = get_session(session_id)
     require_master(session)
     params = parse_projection(layers, link_mode, show_hinge, year_min, year_max,
-                              pivot, connectors, connector_attrs)
+                              pivot, connectors)
     return build_view(session, params, color_by=color_by, size_by=size_by)
 
 

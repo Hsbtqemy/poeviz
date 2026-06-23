@@ -28,7 +28,7 @@ from typing import Any, Iterable
 
 import networkx as nx
 
-from .ingest import ROLE_NODE, ROLE_EDGE, ROLE_ATTRIBUTE, split_cell, parse_year, _normalize_scalar, _is_blank
+from .ingest import ROLE_NODE, ROLE_EDGE, ROLE_ATTRIBUTE, ROLE_IGNORE, split_cell, parse_year, _normalize_scalar, _is_blank
 
 WORK_TYPE = "__work__"
 
@@ -121,9 +121,9 @@ class MasterMeta:
     # Colonne définissant l'IDENTITÉ de la charnière : les lignes qui partagent
     # cette valeur fusionnent en une seule charnière (None = une ligne = une charnière).
     hinge_key: str | None = None
-    # Colonnes-attribut catégorielles utilisables comme « lentille » (connecteur)
-    # sans devenir des nœuds — proposées dans le panneau des couches.
-    lens_attrs: list[str] = field(default_factory=list)
+    # Spécification du panneau de couches (symétrie complète) : une entrée par
+    # colonne non-ignorée — {col, role, default, n_unique, activable, warn}.
+    layer_cols: list[dict[str, Any]] = field(default_factory=list)
 
     def to_summary(self) -> dict[str, Any]:
         return {
@@ -140,7 +140,7 @@ class MasterMeta:
             "unit_singular": self.unit_singular,
             "unit_plural": self.unit_plural,
             "hinge_key": self.hinge_key,
-            "lens_attrs": self.lens_attrs,
+            "layer_cols": self.layer_cols,
             "n_nodes_total": sum(self.type_counts.values()),
         }
 
@@ -163,9 +163,29 @@ def build_master_graph(df, roles: dict[str, str], separators: list[str],
     """
     # La colonne-clé est réservée à l'identité : on l'exclut des rôles affichés.
     hk = hinge_key if (hinge_key and hinge_key in [str(c) for c in df.columns]) else None
-    node_cols = [c for c in df.columns if roles.get(str(c)) == ROLE_NODE and str(c) != hk]
-    edge_cols = [c for c in df.columns if roles.get(str(c)) == ROLE_EDGE and str(c) != hk]
-    attr_cols = [c for c in df.columns if roles.get(str(c)) == ROLE_ATTRIBUTE and str(c) != hk]
+    role_of = {str(c): roles.get(str(c), ROLE_IGNORE) for c in df.columns}
+    node_cols = [c for c in df.columns if role_of[str(c)] == ROLE_NODE and str(c) != hk]
+    edge_cols = [c for c in df.columns if role_of[str(c)] == ROLE_EDGE and str(c) != hk]
+    attr_cols = [c for c in df.columns if role_of[str(c)] == ROLE_ATTRIBUTE and str(c) != hk]
+
+    # Symétrie complète : TOUTE colonne non-ignorée (hors clé) peut devenir nœud ou
+    # connecteur dans le panneau. On crée donc ses nœuds dans le maître — « hors-graphe »
+    # par défaut sauf les colonnes-NŒUD. `distinct` sert au plafond (perf) et à
+    # l'avertissement « quasi-unique » côté interface.
+    distinct: dict[str, int] = {}
+    graph_cols = []
+    for c in df.columns:
+        sc = str(c)
+        if sc == hk or role_of[sc] == ROLE_IGNORE:
+            continue
+        distinct[sc] = _distinct_count(df, c, role_of[sc], separators, MAX_NODE_VALUES)
+        if 2 <= distinct[sc] <= MAX_NODE_VALUES:
+            graph_cols.append(c)
+    graph_col_set = {str(c) for c in graph_cols}
+    # Un attribut devenu nœud apparaît déjà comme voisin de la charnière : on ne le
+    # recopie pas en « attribut » de fiche (évite le doublon). On ne garde en
+    # attributs que les colonnes-info NON activées comme nœuds (ex. trop de valeurs).
+    attr_only_cols = [c for c in attr_cols if str(c) not in graph_col_set]
 
     # Colonne temporelle : celle désignée, sinon la première colonne dont les
     # valeurs ressemblent à des années (toutes colonnes confondues).
@@ -187,7 +207,7 @@ def build_master_graph(df, roles: dict[str, str], separators: list[str],
             years.append(year)
         row_attrs = {
             str(c): _normalize_scalar(row[c])
-            for c in attr_cols if not _is_blank(row[c])
+            for c in attr_only_cols if not _is_blank(row[c])
         }
 
         if work_id in G:
@@ -210,9 +230,10 @@ def build_master_graph(df, roles: dict[str, str], separators: list[str],
             G.add_node(work_id, kind="work", type=WORK_TYPE, label=label, year=year,
                        attributes=dict(row_attrs), row=int(idx), _edge_set=list(edge_values))
 
-        # Relie chaque valeur de chaque colonne-nœud à cette charnière.
-        for col in node_cols:
-            for value in split_cell(row[col], separators):
+        # Relie chaque valeur de chaque colonne activable à cette charnière (toutes
+        # colonnes non-ignorées : elles pourront être affichées ou relier au choix).
+        for col in graph_cols:
+            for value in _col_values(row[col], role_of[str(col)], separators):
                 node_id = f"{col}::{value}"
                 if node_id not in G:
                     G.add_node(node_id, kind="entity", type=str(col), label=value)
@@ -226,9 +247,28 @@ def build_master_graph(df, roles: dict[str, str], separators: list[str],
         wd.pop("_edge_set", None)
 
     type_counts = _count_types(G)
-    palette = assign_palette(node_cols)
+    palette = assign_palette(graph_cols)        # une couleur par type activable
     n_works = sum(1 for _, d in G.nodes(data=True) if d.get("kind") == "work")
-    lens_attrs = _lens_attr_cols(df, attr_cols, time_col)
+
+    # Spécification du panneau de couches : une entrée par colonne non-ignorée, avec
+    # son état par défaut (Nœud si rôle nœud, sinon Hors-graphe), son activabilité
+    # (sous le plafond) et un drapeau « quasi-unique » (deviendrait des nœuds isolés).
+    layer_cols = []
+    for c in df.columns:
+        sc = str(c)
+        if sc == hk or role_of[sc] == ROLE_IGNORE:
+            continue
+        nu = distinct[sc]
+        activable = 2 <= nu <= MAX_NODE_VALUES
+        layer_cols.append({
+            "col": sc,
+            "role": role_of[sc],
+            "default": "node" if role_of[sc] == ROLE_NODE else "off",
+            "n_unique": nu,
+            "activable": activable,
+            "warn": bool(activable and n_works and (nu / n_works) >= 0.9),
+        })
+
     meta = MasterMeta(
         roles={str(k): v for k, v in roles.items()},
         node_cols=[str(c) for c in node_cols],
@@ -244,33 +284,36 @@ def build_master_graph(df, roles: dict[str, str], separators: list[str],
         unit_singular=unit_singular,
         unit_plural=unit_plural,
         hinge_key=hk,
-        lens_attrs=lens_attrs,
+        layer_cols=layer_cols,
     )
     return G, meta
 
 
-# Au-delà de ce nombre de valeurs distinctes, une colonne-attribut n'est pas une
-# bonne lentille (trop fine) ; en deçà de 2, elle ne relie rien.
-LENS_ATTR_MAX_UNIQUE = 40
+# Au-delà de ce nombre de valeurs distinctes, une colonne n'est pas activable comme
+# nœud/connecteur (trop fine, trop lourde) : proposée dans le panneau mais désactivée.
+MAX_NODE_VALUES = 300
 
 
-def _lens_attr_cols(df, attr_cols, time_col) -> list[str]:
-    """Colonnes-attribut catégorielles (2..N valeurs, hors colonne temporelle)
-    proposables comme lentille de connexion sans devenir des nœuds."""
-    out: list[str] = []
-    tc = str(time_col) if time_col is not None else None
-    for c in attr_cols:
-        if str(c) == tc:
-            continue
-        vals: set[str] = set()
-        for v in df[c]:
-            if not _is_blank(v):
-                vals.add(_normalize_scalar(v))
-            if len(vals) > LENS_ATTR_MAX_UNIQUE:
-                break
-        if 2 <= len(vals) <= LENS_ATTR_MAX_UNIQUE:
-            out.append(str(c))
-    return out
+def _col_values(cell, role, separators) -> list[str]:
+    """Valeurs-nœud d'une cellule. On ne découpe le multi-valeur que pour les
+    colonnes en rôle NŒUD (co-auteurs « X & Y »…) ; un titre ou un genre est une
+    valeur unique (ne pas le couper sur « & » ou « , »)."""
+    if _is_blank(cell):
+        return []
+    if role == ROLE_NODE:
+        return split_cell(cell, separators)
+    return [_normalize_scalar(cell)]
+
+
+def _distinct_count(df, col, role, separators, cap) -> int:
+    """Nombre de valeurs distinctes d'une colonne (plafonné à cap+1)."""
+    vals: set[str] = set()
+    for v in df[col]:
+        for x in _col_values(v, role, separators):
+            vals.add(x)
+        if len(vals) > cap:
+            break
+    return len(vals)
 
 
 def _auto_time_col(df) -> str | None:
@@ -325,13 +368,10 @@ class ProjectionParams:
     year_min: int | None = None
     year_max: int | None = None
     pivot: str | None = None                  # type ou id de nœud central (info pour le front)
-    # Types qui RELIENT sans être affichés (ponts en mode report). None = tous les
-    # types masqués relient (comportement historique). Liste = seuls ces types
+    # Types qui RELIENT sans être affichés (ponts en mode report). None = seuls les
+    # types en rôle NŒUD masqués relient (rétro-compat). Liste = seuls ces types
     # relient ; les autres types masqués sont totalement exclus (ni vus, ni reliants).
     connector_layers: list[str] | None = None
-    # Colonnes-ATTRIBUT utilisées comme lentille : deux lignes partageant la même
-    # valeur (ex. même Genre) sont reliées, sans que l'attribut devienne un nœud.
-    connector_attrs: list[str] | None = None
 
 
 def project(G: nx.Graph, meta: MasterMeta, params: ProjectionParams) -> nx.Graph:
@@ -372,12 +412,15 @@ def project(G: nx.Graph, meta: MasterMeta, params: ProjectionParams) -> nx.Graph
     bridge_nodes: set[str] = set()
     if not params.show_hinge:
         bridge_nodes |= active_works
+    node_types = set(meta.node_cols)        # types en rôle NŒUD : relient par défaut
     for n, d in G.nodes(data=True):
         if d.get("kind") == "entity" and d["type"] not in visible_types:
-            # Si une liste de connecteurs est fournie, seuls ces types masqués
-            # relient ; les autres sont exclus (lentille de découverte).
-            if params.connector_layers is not None and d["type"] not in params.connector_layers:
-                continue
+            t = d["type"]
+            if params.connector_layers is not None:
+                if t not in params.connector_layers:
+                    continue                # liste explicite → seuls ces types relient
+            elif t not in node_types:
+                continue                    # défaut → seuls les types NŒUD masqués relient
             if any(w in active_works for w in G.neighbors(n)):
                 bridge_nodes.add(n)
 
@@ -394,22 +437,11 @@ def project(G: nx.Graph, meta: MasterMeta, params: ProjectionParams) -> nx.Graph
             if _edge_touches_active(G, u, v, active_works):
                 _bump_edge(P, u, v, 1)
 
-    # 4b. Mode report : on contracte les « ponts ». Graphe auxiliaire H = ponts
-    #     (charnière + types connecteurs masqués) + connecteurs-ATTRIBUT virtuels
-    #     (lignes partageant une même valeur d'attribut → reliées par un jeton).
-    #     Chaque composante connexe de H relie en clique ses nœuds visibles.
-    if params.link_mode == "report":
-        H = nx.Graph()
-        H.add_nodes_from(bridge_nodes)
-        H.add_edges_from(G.subgraph(bridge_nodes).edges())
-        if params.connector_attrs:
-            for w in active_works:
-                attrs = G.nodes[w].get("attributes") or {}
-                for col in params.connector_attrs:
-                    val = attrs.get(col)
-                    if val:
-                        H.add_edge(w, f"__attr__::{col}::{val}")
-        for component in nx.connected_components(H):
+    # 4b. Mode report : on contracte les « ponts ». Chaque composante connexe de
+    #     l'induit sur les ponts relie en clique ses nœuds visibles frontières.
+    if params.link_mode == "report" and bridge_nodes:
+        bridge_sub = G.subgraph(bridge_nodes)
+        for component in nx.connected_components(bridge_sub):
             boundary = _visible_boundary(G, component, visible_nodes)
             for a, b in itertools.combinations(sorted(boundary), 2):
                 _bump_edge(P, a, b, 1)
@@ -439,16 +471,15 @@ def _edge_touches_active(G: nx.Graph, u: str, v: str, active_works: set[str]) ->
 
 def _visible_boundary(G: nx.Graph, component: set[str], visible_nodes: set[str]) -> set[str]:
     """Nœuds visibles d'une composante de report : membres déjà visibles (ex. un
-    ouvrage affiché) + voisins visibles dans le maître. Tolère les jetons virtuels
-    (connecteurs-attribut), absents de G."""
+    ouvrage affiché, en mode show_hinge) + leurs voisins visibles dans le maître.
+    Tous les membres sont de vrais nœuds du maître (ponts charnière / connecteur)."""
     boundary: set[str] = set()
     for m in component:
         if m in visible_nodes:
             boundary.add(m)
-        if m in G:                       # jeton réel → ses voisins visibles
-            for nb in G.neighbors(m):
-                if nb in visible_nodes:
-                    boundary.add(nb)
+        for nb in G.neighbors(m):
+            if nb in visible_nodes:
+                boundary.add(nb)
     return boundary
 
 

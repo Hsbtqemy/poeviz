@@ -26,8 +26,11 @@ def test_master_is_bipartite():
     ents = [n for n, d in G.nodes(data=True) if d.get("kind") == "entity"]
     assert len(works) == 3                      # une charnière par ligne
     assert meta.n_works == 3
-    # entités : A, B (auteurs) + E1, E2 (éditeurs) = 4
-    assert len(ents) == 4
+    # Symétrie complète : TOUTES les colonnes non-ignorées deviennent des entités
+    # (Auteur 2 + Éditeur 2 + Titre 3 + Année 3 = 10), même si « affichées » varie.
+    assert len(ents) == 10
+    assert meta.node_cols == ["Auteur", "Éditeur"]      # seules celles affichées par défaut
+    assert {l["col"] for l in meta.layer_cols} == {"Auteur", "Éditeur", "Titre", "Année"}
     # graphe biparti : aucune arête entité──entité
     for u, v in G.edges():
         kinds = {G.nodes[u]["kind"], G.nodes[v]["kind"]}
@@ -127,9 +130,14 @@ def test_edge_set_not_leaked():
     assert not any("_edge_set" in d for _, d in P.nodes(data=True))
 
 
-def test_empty_roles_no_entities():
+def test_edge_only_column_available_but_off():
+    # Avec seulement un Titre en « lien » : rien d'affiché par défaut, MAIS le titre
+    # reste disponible dans le panneau (état « hors » par défaut) et a ses nœuds.
     G, meta = graph.build_master_graph(make_df(), {"Titre": "edge"}, SEP)
-    assert sum(meta.type_counts.values()) == 0           # aucune entité
+    assert meta.node_cols == []                          # rien d'affiché par défaut
+    titre = next(l for l in meta.layer_cols if l["col"] == "Titre")
+    assert titre["default"] == "off" and titre["activable"]
+    assert any(d.get("type") == "Titre" for _, d in G.nodes(data=True))   # nœuds créés
 
 
 def make_lens_df():
@@ -167,8 +175,9 @@ def test_connector_layers_isolate_lens():
     assert not via_edit.has_edge("Auteur::A", "Auteur::B")
 
 
-def test_connector_attr_lens():
-    """Une colonne-attribut (ex. Genre) peut servir de lentille sans devenir nœud."""
+def test_attr_as_connector_lens():
+    """Une colonne-info (ex. Genre) devient un type de nœud activable : utilisée
+    comme connecteur (lentille), elle relie les lignes de même valeur."""
     df = pd.DataFrame({
         "Titre": ["T1", "T2", "T3"],
         "Auteur": ["A", "B", "C"],
@@ -176,18 +185,19 @@ def test_connector_attr_lens():
     })
     roles = {"Titre": "edge", "Auteur": "node", "Genre": "attribute"}
     G, meta = graph.build_master_graph(df, roles, SEP)
-    assert "Genre" in meta.lens_attrs                       # proposée comme lentille
-    assert not any(d.get("type") == "Genre" for _, d in G.nodes(data=True))  # pas un nœud
-    # sans lentille : auteurs seuls, rien ne les relie
+    assert any(d.get("type") == "Genre" for _, d in G.nodes(data=True))   # Genre = nœud-type
+    assert "Genre" not in meta.node_cols                                  # mais pas affiché par défaut
+    # sans connecteur : auteurs seuls, rien ne les relie
     p0 = graph.project(G, meta, graph.ProjectionParams(layers=["Auteur"], connector_layers=[]))
     assert not p0.has_edge("Auteur::A", "Auteur::B")
-    # avec Genre en lentille : A & B (Roman) reliés ; C (Essai) à part
+    # Genre en connecteur : A & B (Roman) reliés ; C (Essai) à part
     p = graph.project(G, meta, graph.ProjectionParams(
-        layers=["Auteur"], connector_layers=[], connector_attrs=["Genre"]))
+        layers=["Auteur"], connector_layers=["Genre"]))
     assert p.has_edge("Auteur::A", "Auteur::B")
     assert not p.has_edge("Auteur::A", "Auteur::C")
 
 
-def test_lens_attrs_excludes_time_column():
+def test_time_column_available_as_layer():
     G, meta = graph.build_master_graph(make_df(), ROLES, SEP)   # Année = colonne temps
-    assert "Année" not in meta.lens_attrs
+    annee = next((l for l in meta.layer_cols if l["col"] == "Année"), None)
+    assert annee is not None and annee["default"] == "off"     # dispo, hors par défaut

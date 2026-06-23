@@ -144,16 +144,18 @@ def test_graph_connectors_param():
     assert all(n["type"] == "Auteur" for n in g["nodes"])   # seuls les auteurs affichés
 
 
-def test_lens_attrs_exposed_and_usable():
+def test_layer_cols_and_attr_lens():
     sid = client.get("/demo").json()["session_id"]
     client.get(f"/profile?session_id={sid}")
     cfg = client.post("/configure", json={"session_id": sid, "roles": DEMO_ROLES}).json()
-    assert "Genre" in cfg["summary"]["lens_attrs"]          # attribut proposé comme lentille
-    # auteurs reliés via l'attribut Genre (sans connecteur de type)
+    layers = {l["col"]: l for l in cfg["summary"]["layer_cols"]}
+    assert layers["Auteur"]["default"] == "node"           # rôle nœud → affiché
+    assert layers["Genre"]["default"] == "off"             # info → hors par défaut, mais présente
+    # Genre (devenu type de nœud) utilisé comme connecteur relie des auteurs
     g = client.get("/graph", params={"session_id": sid, "layers": "Auteur",
-                                      "connectors": "", "connector_attrs": "Genre"}).json()
+                                     "connectors": "Genre"}).json()
     assert all(n["type"] == "Auteur" for n in g["nodes"])
-    assert len(g["edges"]) > 0                              # le genre relie des auteurs
+    assert len(g["edges"]) > 0
 
 
 def test_unknown_session_404():

@@ -98,8 +98,7 @@ taille d'upload limitée, métriques mises en cache par vue.
 | **Nom d'une ligne** | comment appeler l'unité qui relie les entités (ex. *livre*, *film*, *traduction*) — *objet* par défaut, ou dérivé du nom de la feuille ; apparaît dans toute l'interface et les exports |
 | **Regrouper les lignes par** | fusionne les lignes partageant un identifiant commun en **une seule charnière** (ex. VO + traduction d'une même œuvre) — relie sans nœud-identifiant parasite |
 | **Organiser autour de** (pivot) | *réorganise* (le pivot influence la disposition) ou *filtre seul* (centre/met en évidence) |
-| **Couches (3 états)** | chaque type d'entité cycle, **sans reconfigurer**, entre *affiché* (nœud visible), *relie* (invisible mais connecte — la « lentille ») et *masqué* (exclu). Permet d'explorer « auteurs reliés via traducteur » puis « via éditeur » à la volée |
-| **Relier par une info** | une colonne *info* catégorielle (genre, langue, lieu…) peut servir de **lentille** sans devenir un nœud : bascule *info ↔ relie*, réversible, dans le panneau des couches |
+| **Couches (3 états)** | **toute** colonne non-ignorée (entité, titre, info, année) cycle, **sans reconfigurer**, entre *affiché* (nœud visible), *relie* (invisible mais connecte — la « lentille ») et *hors* (exclu). Le rôle ne donne que le défaut. Permet d'explorer « auteurs reliés via traducteur » puis « via genre » à la volée — y compris **afficher** un genre/lieu comme points |
 | **Survol d'une arête** | info-bulle expliquant **pourquoi** deux nœuds sont reliés (ouvrages communs + intermédiaires partagés, ex. *via le traducteur X*) |
 | **(nom choisi) (charnière)** | affiche les lignes comme nœuds-charnières, ou les garde implicites *(le libellé suit le nom choisi)* |
 | **Liens d'une couche masquée** | *se reportent* (projection : on relie les voisins entre eux) ou *se coupent* |
