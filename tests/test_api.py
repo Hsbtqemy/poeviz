@@ -158,6 +158,26 @@ def test_layer_cols_and_attr_lens():
     assert len(g["edges"]) > 0
 
 
+def test_axes_endpoint():
+    sid = configured_demo()
+    r = client.get("/axes", params={"session_id": sid, "dims": "Genre,Année"}).json()
+    assert "available" in r and "values" in r
+    kinds = {a["col"]: a["kind"] for a in r["available"]}
+    assert kinds.get("Genre") == "categorical"      # info catégorielle → dominante
+    assert kinds.get("Année") == "numeric"          # colonne temps → moyenne
+    # des auteurs ont un genre dominant et une année moyenne (nombre)
+    assert any(k.startswith("Auteur::") for k in r["values"]["Genre"])
+    a_year = next(v for k, v in r["values"]["Année"].items() if k.startswith("Auteur::"))
+    assert isinstance(a_year, (int, float))
+
+
+def test_axes_inert_by_default():
+    """La brique est inerte : /graph ne porte aucun agrégat (vue par défaut intacte)."""
+    sid = configured_demo()
+    g = client.get(f"/graph?session_id={sid}").json()
+    assert all("attr_agg" not in n and "axis" not in n for n in g["nodes"])
+
+
 def test_unknown_session_404():
     assert client.get("/graph?session_id=inexistant").status_code == 404
 

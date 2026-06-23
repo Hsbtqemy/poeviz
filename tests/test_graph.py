@@ -201,3 +201,73 @@ def test_time_column_available_as_layer():
     G, meta = graph.build_master_graph(make_df(), ROLES, SEP)   # Année = colonne temps
     annee = next((l for l in meta.layer_cols if l["col"] == "Année"), None)
     assert annee is not None and annee["default"] == "off"     # dispo, hors par défaut
+
+
+def make_axis_df():
+    # A : 2 Roman + 1 Essai → dominante Roman ; années 1990/2000/2010 → moyenne 2000.
+    # B : 1 Poésie en 1980.
+    return pd.DataFrame({
+        "Titre": ["T1", "T2", "T3", "T4"],
+        "Auteur": ["A", "A", "A", "B"],
+        "Genre": ["Roman", "Roman", "Essai", "Poésie"],
+        "Année": [1990, 2000, 2010, 1980],
+    })
+
+
+AXIS_ROLES = {"Titre": "edge", "Auteur": "node", "Genre": "attribute", "Année": "attribute"}
+
+
+def test_axis_values_aggregates_attribute():
+    """La brique T1 : agrégat par nœud — dominante pour un catégoriel, moyenne pour
+    un numérique. mean_year en est le cas particulier (cohérence avec node_mean_year)."""
+    G, meta = graph.build_master_graph(make_axis_df(), AXIS_ROLES, SEP)
+    # Genre = catégoriel (dominante), Année = colonne temps → numérique (moyenne).
+    kinds = {l["col"]: l["kind"] for l in meta.layer_cols}
+    assert kinds["Genre"] == "categorical" and kinds["Année"] == "numeric"
+    vals = graph.axis_values(G, meta, graph.ProjectionParams(), ["Genre", "Année"])
+    assert vals["Genre"]["Auteur::A"] == "Roman"          # 2 Roman > 1 Essai
+    assert vals["Année"]["Auteur::A"] == 2000.0           # (1990+2000+2010)/3
+    assert vals["Genre"]["Auteur::B"] == "Poésie"
+    # cohérence avec node_mean_year, le patron généralisé (qui lit work_years déposé
+    # par project) : la moyenne d'année de la brique == celle de l'axe temporel.
+    P = graph.project(G, meta, graph.ProjectionParams(layers=["Auteur"]))
+    assert vals["Année"]["Auteur::A"] == graph.node_mean_year(P.nodes["Auteur::A"])
+
+
+def test_axis_values_respects_time_window():
+    """Projection-dépendant : restreindre la fenêtre change les agrégats (comme le
+    fait déjà mean_year pour l'axe temporel)."""
+    G, meta = graph.build_master_graph(make_axis_df(), AXIS_ROLES, SEP)
+    vals = graph.axis_values(G, meta, graph.ProjectionParams(year_max=1995),
+                             ["Genre", "Année"])
+    assert vals["Année"]["Auteur::A"] == 1990.0           # seul T1 (1990) reste actif
+    assert vals["Genre"]["Auteur::A"] == "Roman"
+
+
+def test_axis_values_handles_decimal_comma():
+    """Convention française : une colonne à virgule décimale est classée numérique
+    et moyennée (« 4,0 » et « 6,0 » → 5.0)."""
+    df = pd.DataFrame({
+        "Titre": ["T1", "T2", "T3"],
+        "Auteur": ["A", "A", "B"],
+        "Note": ["4,0", "6,0", "3,0"],
+    })
+    roles = {"Titre": "edge", "Auteur": "node", "Note": "attribute"}
+    G, meta = graph.build_master_graph(df, roles, SEP)
+    kinds = {l["col"]: l["kind"] for l in meta.layer_cols}
+    assert kinds["Note"] == "numeric"
+    vals = graph.axis_values(G, meta, graph.ProjectionParams(), ["Note"])
+    assert vals["Note"]["Auteur::A"] == 5.0
+
+
+def test_axis_values_dominant_is_deterministic():
+    """Ex æquo départagé par ordre alphabétique → résultat stable."""
+    df = pd.DataFrame({
+        "Titre": ["T1", "T2", "T3"],
+        "Auteur": ["A", "A", "B"],            # 2 auteurs (sinon Auteur < 2 distinct)
+        "Genre": ["Roman", "Essai", "Roman"],  # A : 1 Roman + 1 Essai → tie → Essai (alpha)
+    })
+    roles = {"Titre": "edge", "Auteur": "node", "Genre": "attribute"}
+    G, meta = graph.build_master_graph(df, roles, SEP)
+    vals = graph.axis_values(G, meta, graph.ProjectionParams(), ["Genre"])
+    assert vals["Genre"]["Auteur::A"] == "Essai"

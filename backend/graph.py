@@ -28,7 +28,8 @@ from typing import Any, Iterable
 
 import networkx as nx
 
-from .ingest import ROLE_NODE, ROLE_EDGE, ROLE_ATTRIBUTE, ROLE_IGNORE, split_cell, parse_year, _normalize_scalar, _is_blank
+from .ingest import (ROLE_NODE, ROLE_EDGE, ROLE_ATTRIBUTE, ROLE_IGNORE, split_cell,
+                     parse_year, _normalize_scalar, _is_blank, _is_number)
 
 WORK_TYPE = "__work__"
 
@@ -252,7 +253,9 @@ def build_master_graph(df, roles: dict[str, str], separators: list[str],
 
     # Spécification du panneau de couches : une entrée par colonne non-ignorée, avec
     # son état par défaut (Nœud si rôle nœud, sinon Hors-graphe), son activabilité
-    # (sous le plafond) et un drapeau « quasi-unique » (deviendrait des nœuds isolés).
+    # (sous le plafond), un drapeau « quasi-unique » (deviendrait des nœuds isolés)
+    # et sa nature (numérique/catégoriel) — utile aux dispositions « par attribut ».
+    tc = str(time_col) if time_col is not None else None
     layer_cols = []
     for c in df.columns:
         sc = str(c)
@@ -267,6 +270,7 @@ def build_master_graph(df, roles: dict[str, str], separators: list[str],
             "n_unique": nu,
             "activable": activable,
             "warn": bool(activable and n_works and (nu / n_works) >= 0.9),
+            "kind": "numeric" if (sc == tc or _is_numeric_col(df, c)) else "categorical",
         })
 
     meta = MasterMeta(
@@ -314,6 +318,28 @@ def _distinct_count(df, col, role, separators, cap) -> int:
         if len(vals) > cap:
             break
     return len(vals)
+
+
+def _is_numeric_col(df, col) -> bool:
+    """Vrai si toutes les valeurs non-vides de la colonne sont des nombres → l'agrégat
+    d'un nœud sur cette dimension se fait par moyenne plutôt que par valeur dominante.
+    Réutilise `_is_number` (gère la virgule décimale, convention du projet)."""
+    seen = False
+    for v in df[col]:
+        if _is_blank(v):
+            continue
+        seen = True
+        if not _is_number(v):
+            return False
+    return seen
+
+
+def _to_float(v) -> float | None:
+    """Parse un nombre en tolérant la virgule décimale (cohérent avec `_is_number`)."""
+    try:
+        return float(str(v).replace(",", ".").strip())
+    except (TypeError, ValueError):
+        return None
 
 
 def _auto_time_col(df) -> str | None:
@@ -593,6 +619,93 @@ def all_work_cards(G: nx.Graph, meta: MasterMeta) -> dict[str, dict[str, str]]:
     """Cartes de toutes les charnières, calculées en une passe (servies par /cards)."""
     return {n: work_card(G, meta, n)
             for n, d in G.nodes(data=True) if d.get("kind") == "work"}
+
+
+# --------------------------------------------------------------------------
+# Agrégats par nœud — brique commune des dispositions « par attribut » (axes,
+# similarité). Inerte par défaut : ni /graph ni la vue par défaut ne l'appellent.
+# --------------------------------------------------------------------------
+
+def _active_works(G: nx.Graph, params: ProjectionParams) -> set[str]:
+    """Charnières dans la fenêtre temporelle courante (année absente = toujours active)."""
+    out: set[str] = set()
+    for n, d in G.nodes(data=True):
+        if d.get("kind") != "work":
+            continue
+        y = d.get("year")
+        if y is not None:
+            if params.year_min is not None and y < params.year_min:
+                continue
+            if params.year_max is not None and y > params.year_max:
+                continue
+        out.add(n)
+    return out
+
+
+def _work_dim_values(G: nx.Graph, w: str, dim: str, meta: MasterMeta) -> list:
+    """Valeur(s) de la dimension `dim` portées par une charnière : son année (si `dim`
+    est la colonne temporelle), sinon ses entités voisines de ce type et/ou l'attribut
+    de fiche du même nom — selon où la colonne vit depuis la symétrie complète."""
+    d = G.nodes[w]
+    if meta.time_col is not None and dim == str(meta.time_col):
+        return [d["year"]] if d.get("year") is not None else []
+    out: list = []
+    for nb in G.neighbors(w):
+        nd = G.nodes[nb]
+        if nd.get("kind") == "entity" and nd.get("type") == dim:
+            out.append(nd.get("label", nb))
+    av = (d.get("attributes") or {}).get(dim)
+    if av is not None:
+        out.append(av)
+    return out
+
+
+def _aggregate_values(values: list, kind: str):
+    """Agrège des valeurs en un scalaire : numérique → moyenne ; catégoriel → valeur
+    dominante (ex æquo départagé par ordre alphabétique → résultat déterministe)."""
+    if not values:
+        return None
+    if kind == "numeric":
+        nums = [f for v in values if (f := _to_float(v)) is not None]
+        return round(sum(nums) / len(nums), 4) if nums else None
+    counts: dict[str, int] = {}
+    for v in values:
+        s = str(v)
+        counts[s] = counts.get(s, 0) + 1
+    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+
+
+def axis_values(G: nx.Graph, meta: MasterMeta, params: ProjectionParams,
+                dims: Iterable[str]) -> dict[str, dict[str, Any]]:
+    """Pour chaque dimension demandée, l'agrégat de cette dimension par nœud, calculé
+    sur ses ouvrages **actifs** (respecte la fenêtre temporelle). Généralise
+    `node_mean_year` à n'importe quel attribut ; robuste à la fusion `hinge_key` (on
+    parcourt les ouvrages voisins, jamais un identifiant de charnière). Renvoie
+    `{dim: {node_id: valeur}}` — un nœud sans valeur pour une dimension est omis."""
+    dim_list = [str(x) for x in dims if x]
+    if not dim_list:
+        return {}
+    kind_of = {e["col"]: e.get("kind", "categorical") for e in meta.layer_cols}
+    active = _active_works(G, params)
+    result: dict[str, dict[str, Any]] = {dim: {} for dim in dim_list}
+    for n, d in G.nodes(data=True):
+        kind = d.get("kind")
+        if kind == "work":
+            works = [n] if n in active else []
+        elif kind == "entity":
+            works = [w for w in G.neighbors(n) if w in active]
+        else:
+            continue
+        if not works:
+            continue
+        for dim in dim_list:
+            vals: list = []
+            for w in works:
+                vals.extend(_work_dim_values(G, w, dim, meta))
+            agg = _aggregate_values(vals, kind_of.get(dim, "categorical"))
+            if agg is not None:
+                result[dim][n] = agg
+    return result
 
 
 def node_detail(G: nx.Graph, meta: MasterMeta, node_id: str,

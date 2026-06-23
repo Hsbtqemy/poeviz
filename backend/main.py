@@ -509,6 +509,32 @@ def get_metrics(
     return {"summary": view["summary"], "nodes": view["nodes"]}
 
 
+@app.get("/axes")
+def get_axes(
+    session_id: str,
+    dims: str | None = None,
+    year_min: int | None = None,
+    year_max: int | None = None,
+) -> dict[str, Any]:
+    """Agrégat d'un (ou plusieurs) attribut(s) par nœud, sur ses ouvrages actifs —
+    brique des futures dispositions « par attribut » (axes) et « par similarité ».
+    Inerte : /graph et la vue par défaut ne l'appellent pas. `available` liste les
+    dimensions agrégeables (avec leur nature numérique/catégorielle) ; `values`
+    renvoie `{dim: {node_id: valeur}}` pour les dimensions demandées via `dims`."""
+    session = get_session(session_id)
+    require_master(session)
+    meta = session.meta
+    available = [
+        {"col": e["col"], "kind": e.get("kind", "categorical"),
+         "activable": e.get("activable", False)}
+        for e in meta.layer_cols
+    ]
+    dim_list = [x for x in (dims or "").split(",") if x]
+    params = graph.ProjectionParams(year_min=year_min, year_max=year_max)
+    values = graph.axis_values(session.master, meta, params, dim_list)
+    return {"available": available, "values": values}
+
+
 @app.post("/export")
 def post_export(body: ExportBody):
     session = get_session(body.session_id)
