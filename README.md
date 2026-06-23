@@ -74,8 +74,9 @@ Puis ouvrez **http://127.0.0.1:8000/**. Le même serveur sert l'API *et* le fron
 | **Couches visibles** | affiche/masque chaque type d'entité (avec compteur et pastille de couleur) |
 | **Ouvrages (charnière)** | affiche les ouvrages comme nœuds, ou les garde implicites |
 | **Liens d'une couche masquée** | *se reportent* (projection : on relie les voisins entre eux) ou *se coupent* |
-| **Couleur des nœuds** | par **type** d'entité, ou par **communauté** (Louvain) |
+| **Couleur des nœuds** | par **type** d'entité, par **communauté** (Louvain), ou par **époque** (année moyenne d'activité → dégradé, avec légende) |
 | **Taille des nœuds** | par centralité : degré, intermédiarité, vecteur propre |
+| **Disposition** | force (galaxie), **temporel** (axe horizontal = temps), circulaire, dispersée |
 | **Densité des étiquettes** | toutes / pivots / aucune |
 | **Disposition** | force (galaxie) / circulaire / dispersée |
 | **Affichage** | *automatique* (points → étiquettes → cartes selon le zoom), *toujours points*, *toujours cartes* — plus **épinglage** d'une carte sur un nœud |
@@ -84,6 +85,8 @@ Puis ouvrez **http://127.0.0.1:8000/**. Le même serveur sert l'API *et* le fron
 | **Lecture animée** | bouton ▶ qui balaie le temps (play / pause / vitesse) — le réseau se construit année après année, sans recalcul des positions |
 | **Filtre temporel** | *cumulatif* (borne basse + borne haute libres) ou *fenêtre glissante* (tranche de largeur fixe qu'on fait défiler — combinée à la lecture animée) |
 | **Instantanés** | une grille de mini-réseaux à des périodes successives (mêmes positions de nœuds) pour comparer les époques — exportable en PNG 300 DPI + SVG |
+| **Chronologie** | vue alternative : une ligne par entité du pivot, ses ouvrages placés dans le temps (point par ouvrage, trait de durée d'activité, couleur par attribut au choix) — exportable PNG + SVG |
+| **Réseau temporel** | disposition où l'axe horizontal = le temps (X = année moyenne, Y anti-collision, taille = nombre d'ouvrages, liens conservés), axe des années affiché — exportable PNG + SVG |
 
 **Niveaux de détail** : dézoomé = points colorés ; zoom intermédiaire = points +
 étiquettes ; zoom rapproché = petites **cartes** (titre + 2-3 infos).

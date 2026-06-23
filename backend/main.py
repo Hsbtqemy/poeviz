@@ -86,6 +86,7 @@ class ExportBody(BaseModel):
     title: str | None = None
     view: dict[str, Any] = {}      # {nodes:[...], edges:[...]} envoyés par le front
     panels: list[dict[str, Any]] | None = None   # petits multiples : une vue par période
+    time_axis: dict[str, Any] | None = None      # réseau temporel : axe des années à dessiner
 
 
 # --------------------------------------------------------------------------
@@ -413,7 +414,7 @@ def post_export(body: ExportBody):
         elif kind == "image":
             data, ctype = export.render_image(
                 nodes, edges, fmt=body.format, dimensions=body.dimensions,
-                labels=body.labels, title=body.title)
+                labels=body.labels, title=body.title, time_axis=body.time_axis)
             ext = body.format.lower()
         elif kind == "gexf":
             data, ctype, ext = export.build_gexf(nodes, edges), "application/gexf+xml", "gexf"

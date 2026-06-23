@@ -25,9 +25,13 @@
 
   let sigma = null;
   let graph = null;
-  let cardsEl = null, tooltipEl = null, statusEl = null;
+  let cardsEl = null, tooltipEl = null, statusEl = null, timeAxisEl = null;
   let callbacks = {};
   const posCache = Object.create(null);   // id -> {x,y} (persistant)
+
+  // mode « réseau temporel » : X contraint par le temps, Y anti-collision
+  const TEMPORAL_WIDTH = 1200;
+  let temporalMode = false, tYearMin = null, tYearMax = null;
 
   let focusSet = null;        // ids à garder en évidence (null = tout)
   let selected = null;        // nœud cliqué
@@ -41,6 +45,7 @@
   // ---------------------------------------------------------------- init
   function init(opts) {
     cardsEl = opts.cards; tooltipEl = opts.tooltip; statusEl = opts.statusEl;
+    timeAxisEl = opts.timeAxis;
     callbacks = opts;
     graph = new Graph({ multi: false, type: "undirected" });
     sigma = new SigmaCtor(graph, opts.container, {
@@ -61,8 +66,8 @@
     sigma.on("clickStage", () => callbacks.onBackground && callbacks.onBackground());
     sigma.on("enterNode", (e) => showTooltip(e.node));
     sigma.on("leaveNode", hideTooltip);
-    sigma.getCamera().on("updated", () => { updateLOD(); scheduleCards(); });
-    sigma.on("afterRender", scheduleCards);
+    sigma.getCamera().on("updated", () => { updateLOD(); scheduleCards(); updateTimeAxis(); });
+    sigma.on("afterRender", () => { scheduleCards(); updateTimeAxis(); });
 
     setupDrag();
   }
@@ -126,6 +131,7 @@
         x: cached ? cached.x : (n.x || 0),
         y: cached ? cached.y : (n.y || 0),
         ntype: n.type, kind: n.kind, work_count: n.work_count,
+        mean_year: n.mean_year, baseSize: n.size,
         community: n.community, baseColor: n.color,
       });
     });
@@ -137,23 +143,31 @@
 
     computePivotCutoff();
 
+    temporalMode = (opts.layoutKind === "temporal");
+    tYearMin = opts.yearMin; tYearMax = opts.yearMax;
+
     if (opts.relayout) {
-      layout(opts.layoutKind || "force");
-      if (opts.pivot && opts.pivotMode === "reorganize") centerPivot(opts.pivot);
+      layout(opts.layoutKind || "force", opts);
+      if (opts.pivot && opts.pivotMode === "reorganize" && !temporalMode) centerPivot(opts.pivot);
       savePositions();
       sigma.getCamera().animatedReset();
+    } else if (temporalMode) {
+      applyTemporalSizing();   // garde la taille = nb d'ouvrages au scrub temporel
     }
     updateLOD();
     sigma.refresh();
     scheduleCards();
+    updateTimeAxis();
     if (statusEl) statusEl.textContent =
       `${graph.order} nœuds · ${graph.size} liens`;
   }
 
   // -------------------------------------------------------------- dispositions
-  function layout(kind) {
+  function layout(kind, opts) {
     if (graph.order === 0) return;
-    if (kind === "circular" && basicLayouts.circular) {
+    if (kind === "temporal") {
+      temporalLayout((opts && opts.yearMin), (opts && opts.yearMax));
+    } else if (kind === "circular" && basicLayouts.circular) {
       basicLayouts.circular.assign(graph, { scale: 10 });
     } else if (kind === "random" && basicLayouts.random) {
       basicLayouts.random.assign(graph, { scale: 20, center: 0 });
@@ -165,6 +179,71 @@
       settings.adjustSizes = true;
       FA2.assign(graph, { iterations: Math.min(420, 120 + graph.order * 3), settings });
     }
+  }
+
+  // Réseau temporel : X = année moyenne ; Y = répartition anti-collision (beeswarm).
+  // On ne lance PAS ForceAtlas2 ici — les X resteraient libres sinon.
+  function temporalLayout(ymin, ymax) {
+    if (ymin == null || ymax == null) { layout("force"); return; }   // pas de temps → repli
+    const span = (ymax - ymin) || 1;
+    let maxWC = 1;
+    graph.forEachNode((id, a) => { maxWC = Math.max(maxWC, a.work_count || 1); });
+    const nodes = [];
+    graph.forEachNode((id, a) => {
+      const my = a.mean_year;
+      const x = (my == null) ? -100 : ((my - ymin) / span) * TEMPORAL_WIDTH;
+      const wc = a.work_count || 1;
+      nodes.push({ id, x, wc, r: 12 + 30 * (wc / maxWC) });   // rayon de collision (unités graphe)
+    });
+    nodes.sort((a, b) => a.x - b.x);
+    const placed = [];
+    nodes.forEach((p) => {
+      const step = Math.max(9, p.r * 0.85);
+      let y = 0, k = 0, ok = false;
+      while (!ok && k < 800) {
+        const cands = k === 0 ? [0] : [k * step, -k * step];
+        for (const cand of cands) { if (!collides(p, cand, placed)) { y = cand; ok = true; break; } }
+        k++;
+      }
+      p.y = y; placed.push(p);
+      graph.setNodeAttribute(p.id, "x", p.x);
+      graph.setNodeAttribute(p.id, "y", -p.y);                 // y vers le haut
+      graph.setNodeAttribute(p.id, "size", 5 + 16 * (p.wc / maxWC));   // taille = nb d'ouvrages
+    });
+  }
+
+  function collides(p, y, placed) {
+    for (const q of placed) {
+      if (Math.abs(q.x - p.x) < (q.r + p.r) && Math.abs(q.y - y) < (q.r + p.r)) return true;
+    }
+    return false;
+  }
+
+  function applyTemporalSizing() {
+    let maxWC = 1;
+    graph.forEachNode((id, a) => { maxWC = Math.max(maxWC, a.work_count || 1); });
+    graph.forEachNode((id, a) => graph.setNodeAttribute(id, "size", 5 + 16 * ((a.work_count || 1) / maxWC)));
+  }
+
+  function updateTimeAxis() {
+    if (!timeAxisEl) return;
+    if (!temporalMode || tYearMin == null || tYearMax == null) {
+      timeAxisEl.classList.add("hidden"); timeAxisEl.innerHTML = ""; return;
+    }
+    timeAxisEl.classList.remove("hidden");
+    const span = (tYearMax - tYearMin) || 1;
+    const step = axisStep(span);
+    let html = '<div class="axis-line"></div>';
+    for (let yr = Math.ceil(tYearMin / step) * step; yr <= tYearMax; yr += step) {
+      const gx = ((yr - tYearMin) / span) * TEMPORAL_WIDTH;
+      const vp = sigma.graphToViewport({ x: gx, y: 0 });
+      html += `<span class="tick" style="left:${vp.x}px">${yr}</span>`;
+    }
+    timeAxisEl.innerHTML = html;
+  }
+  function axisStep(span) {
+    for (const s of [1, 2, 5, 10, 20, 25, 50, 100]) if (span / s <= 10) return s;
+    return 200;
   }
 
   function centerPivot(pivotType) {
@@ -389,6 +468,7 @@
     setLabelsDensity, setDisplayMode, resize, getPositions,
     getViewNodes, getViewEdges, neighborhood,
     getMetrics: () => ({ nodes: graph ? graph.order : 0, edges: graph ? graph.size : 0 }),
+    temporalWidth: TEMPORAL_WIDTH,
     // Hook de test (e2e) : déclenche la sélection comme un clic sur le nœud.
     simulateClick: (id) => callbacks.onSelect && callbacks.onSelect(id),
   };

@@ -179,7 +179,8 @@
 
     if (!window.__netInit) {
       NetView.init({
-        container: $("sigma"), cards: $("cards"), tooltip: $("tooltip"), statusEl: el["statusline"],
+        container: $("sigma"), cards: $("cards"), tooltip: $("tooltip"),
+        statusEl: el["statusline"], timeAxis: el["time-axis"],
         onSelect: selectNode, onBackground: deselect,
       });
       window.__netInit = true;
@@ -462,6 +463,7 @@
       NetView.render(data, {
         relayout, layoutKind: State.layout,
         pivot: State.pivot, pivotMode: State.pivotMode,
+        yearMin: State.fullYearMin, yearMax: State.fullYearMax,
       });
       State.layoutSig = sig;
       NetView.setLabelsDensity(State.labels);
@@ -554,6 +556,10 @@
         dimensions: el["exp-dim"].value, labels: el["exp-labels"].value,
         title: State.filename, view: currentView(),
       };
+      // réseau temporel : on joint l'axe des années pour qu'il figure dans l'image
+      if (kind === "image" && State.layout === "temporal" && State.fullYearMin != null) {
+        body.time_axis = { year_min: State.fullYearMin, year_max: State.fullYearMax, width: NetView.temporalWidth };
+      }
       const res = await api("/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const blob = await res.blob();
       const cd = res.headers.get("Content-Disposition") || "";

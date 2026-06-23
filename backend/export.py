@@ -40,13 +40,16 @@ DIMENSION_PRESETS = {
 
 def render_image(nodes: list[dict[str, Any]], edges: list[dict[str, Any]],
                  fmt: str = "png", dimensions: str = "pleine_page",
-                 labels: str = "pivots", title: str | None = None) -> tuple[bytes, str]:
-    """Redessine la vue. Renvoie (octets, content_type)."""
+                 labels: str = "pivots", title: str | None = None,
+                 time_axis: dict[str, Any] | None = None) -> tuple[bytes, str]:
+    """Redessine la vue. Renvoie (octets, content_type). Si time_axis est fourni
+    (réseau temporel), dessine un axe des années en bas."""
     width, height = DIMENSION_PRESETS.get(dimensions, DIMENSION_PRESETS["pleine_page"])
     fig, ax = plt.subplots(figsize=(width, height))
     fig.patch.set_facecolor(PAPER)
     ax.set_facecolor(PAPER)
-    ax.axis("off")
+    if not time_axis:
+        ax.axis("off")
 
     pos = {n["id"]: (n["x"], n["y"]) for n in nodes}
 
@@ -77,6 +80,8 @@ def render_image(nodes: list[dict[str, Any]], edges: list[dict[str, Any]],
         ax.set_title(title, color=INK, fontsize=12, loc="left", pad=10)
 
     _autoscale(ax, xs, ys)
+    if time_axis:
+        _draw_time_axis(ax, time_axis)
     fig.tight_layout(pad=0.4)
 
     buf = io.BytesIO()
@@ -229,6 +234,26 @@ def _labelled_nodes(nodes: list[dict], labels: str) -> list[dict]:
     labelled.sort(key=lambda n: float(n.get("size", 0)), reverse=True)
     cutoff = max(1, int(len(labelled) * 0.2))
     return labelled[:cutoff]
+
+
+def _draw_time_axis(ax, ta: dict[str, Any]) -> None:
+    """Dessine un axe des années en bas (réseau temporel)."""
+    import math
+    ymin, ymax = ta.get("year_min"), ta.get("year_max")
+    w = float(ta.get("width", 1200))
+    if ymin is None or ymax is None:
+        return
+    span = (ymax - ymin) or 1
+    ax.set_yticks([])
+    for s in ("top", "right", "left"):
+        ax.spines[s].set_visible(False)
+    ax.spines["bottom"].set_color("#CFC9BD")
+    step = next((s for s in (1, 2, 5, 10, 20, 25, 50, 100) if span / s <= 10), 200)
+    years = list(range(int(math.ceil(ymin / step)) * step, int(ymax) + 1, step))
+    ax.set_xticks([((yr - ymin) / span) * w for yr in years])
+    ax.set_xticklabels([str(y) for y in years], fontsize=8)
+    ax.tick_params(axis="x", colors="#8A857B", length=4)
+    ax.set_xlabel("Année (moyenne des ouvrages liés)", color=INK, fontsize=10)
 
 
 def _autoscale(ax, xs, ys) -> None:
