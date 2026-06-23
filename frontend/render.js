@@ -217,7 +217,7 @@
     });
   }
 
-  function hasStruct() { for (const k in structPos) return true; return false; }
+  function hasStruct() { return Object.keys(structPos).length > 0; }
 
   function applyTemporalSizing() {
     let maxWC = 1;

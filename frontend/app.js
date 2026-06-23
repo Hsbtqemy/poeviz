@@ -193,6 +193,7 @@
     buildPivotList();
     buildLayers();
     buildTimeline();
+    toggleTemporalUI(State.fullYearMin != null);
     el["rail-foot"].textContent =
       `${State.summary.n_works} ouvrages · ${State.summary.n_nodes_total} entités`;
     refreshGraph();
@@ -785,8 +786,27 @@
     for (const s of [1, 2, 5, 10, 20, 25, 50, 100]) if (span / s <= 10) return s;
     return 200;
   }
+  // Masque les fonctions temporelles si le tableur n'a pas de colonne d'année
+  // (sinon elles produiraient des vues vides) — généricité.
+  function toggleTemporalUI(hasTime) {
+    const show = hasTime ? "" : "none";
+    el["chrono-btn"].style.display = show;
+    el["snapshots-btn"].style.display = show;
+    const epochSpan = document.querySelector('#seg-color span[data-v="epoch"]');
+    if (epochSpan) epochSpan.style.display = show;
+    const tempOpt = document.querySelector('#layout-sel option[value="temporal"]');
+    if (tempOpt) { tempOpt.disabled = !hasTime; tempOpt.style.display = show; }
+    if (!hasTime) {
+      if (State.colorBy === "epoch") { State.colorBy = "type"; resetSeg("seg-color", "type"); }
+      if (State.layout === "temporal") { State.layout = "force"; el["layout-sel"].value = "force"; }
+    }
+  }
+  function resetSeg(id, v) {
+    el[id].querySelectorAll("span").forEach((s) => s.classList.toggle("on", s.dataset.v === v));
+  }
+
   function updateEpochLegend(legend) {
-    if (State.colorBy !== "epoch" || !legend) { el["epoch-legend"].classList.add("hidden"); return; }
+    if (State.colorBy !== "epoch" || !legend || legend.year_min == null) { el["epoch-legend"].classList.add("hidden"); return; }
     el["epoch-legend"].classList.remove("hidden");
     el["el-min"].textContent = legend.year_min;
     el["el-max"].textContent = legend.year_max;
