@@ -40,6 +40,7 @@
   let displayMode = "auto";   // auto | points | cards
   let unitSingular = "objet", unitPlural = "objets";  // nom de la charnière (réglable)
   let cardFields = [];        // colonnes à afficher sur la carte d'une charnière
+  let hoveredEdge = null;     // arête survolée (anti-bulle fantôme sur réponse async)
   let cardData = {};          // {id charnière: {champ: valeur}} — chargé une fois via /cards
   let lodMode = "labels";     // points | labels | cards (résolu selon zoom)
   let pivotCutoff = 0;        // taille mini pour étiqueter en mode "pivots"
@@ -59,7 +60,7 @@
       labelWeight: "600",
       labelColor: { color: "#23201C" },
       labelRenderedSizeThreshold: 0,
-      enableEdgeEvents: false,
+      enableEdgeEvents: true,
       zIndex: true,
       minCameraRatio: 0.05,
       maxCameraRatio: 20,
@@ -70,6 +71,10 @@
     sigma.on("clickStage", () => callbacks.onBackground && callbacks.onBackground());
     sigma.on("enterNode", (e) => showTooltip(e.node));
     sigma.on("leaveNode", hideTooltip);
+    // Survol d'une arête → on demande au contrôleur « pourquoi reliés » et on
+    // affiche la réponse en info-bulle (les arêtes ne sont plus anonymes).
+    sigma.on("enterEdge", (e) => onEdgeEnter(e.edge));
+    sigma.on("leaveEdge", () => { hoveredEdge = null; hideTooltip(); });
     sigma.getCamera().on("updated", () => { updateLOD(); scheduleCards(); updateTimeAxis(); });
     sigma.on("afterRender", () => { scheduleCards(); updateTimeAxis(); });
 
@@ -141,7 +146,9 @@
     });
     data.edges.forEach((e) => {
       if (graph.hasNode(e.source) && graph.hasNode(e.target) && !graph.hasEdge(e.source, e.target)) {
-        graph.addEdge(e.source, e.target, { size: Math.min(0.6 + 0.4 * (e.weight || 1), 4), weight: e.weight || 1 });
+        // Épaisseur min relevée : la zone de survol d'une arête = son épaisseur,
+        // donc des arêtes trop fines sont difficiles à viser. Min ≈ 2 px.
+        graph.addEdge(e.source, e.target, { size: Math.min(1.6 + 0.4 * (e.weight || 1), 6), weight: e.weight || 1 });
       }
     });
 
@@ -364,6 +371,28 @@
   function hideTooltip() {
     if (tooltipEl) tooltipEl.style.opacity = "0";
     if (sigma.getContainer()) sigma.getContainer().style.cursor = "default";
+  }
+
+  function onEdgeEnter(edge) {
+    if (!callbacks.onEdgeHover || !graph.hasEdge(edge)) return;
+    hoveredEdge = edge;
+    const ext = graph.extremities(edge);
+    if (sigma.getContainer()) sigma.getContainer().style.cursor = "help";
+    // Le contrôleur récupère l'explication (async) puis nous rappelle pour afficher.
+    // On n'affiche que si on survole TOUJOURS la même arête (anti-bulle fantôme).
+    callbacks.onEdgeHover(ext[0], ext[1], (html) => {
+      if (hoveredEdge === edge) showEdgeTooltip(ext[0], ext[1], html);
+    });
+  }
+
+  function showEdgeTooltip(s, t, html) {
+    if (!tooltipEl || !graph.hasNode(s) || !graph.hasNode(t)) return;
+    const a = graph.getNodeAttributes(s), b = graph.getNodeAttributes(t);
+    const p = sigma.graphToViewport({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    tooltipEl.innerHTML = html;
+    tooltipEl.style.left = p.x + "px";
+    tooltipEl.style.top = p.y + "px";
+    tooltipEl.style.opacity = "1";
   }
 
   // --------------------------------------------------------------- sélection

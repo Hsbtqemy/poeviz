@@ -127,6 +127,35 @@ def test_vo_vf_upload_and_group():
     assert "Œuvre" not in cfg["summary"]["node_layers"]
 
 
+def test_edge_endpoint_explains_link():
+    sid = configured_demo()
+    g = client.get(f"/graph?session_id={sid}").json()
+    e = g["edges"][0]
+    d = client.get("/edge", params={"session_id": sid,
+                                    "source": e["source"], "target": e["target"]}).json()
+    assert d["source_label"] and d["target_label"]
+    assert "shared_via" in d and "shared_works" in d
+
+
+def test_graph_connectors_param():
+    sid = configured_demo()
+    # lentille « via traducteur » : auteurs seuls, connecteur = Traducteur
+    g = client.get(f"/graph?session_id={sid}&layers=Auteur&connectors=Traducteur").json()
+    assert all(n["type"] == "Auteur" for n in g["nodes"])   # seuls les auteurs affichés
+
+
+def test_lens_attrs_exposed_and_usable():
+    sid = client.get("/demo").json()["session_id"]
+    client.get(f"/profile?session_id={sid}")
+    cfg = client.post("/configure", json={"session_id": sid, "roles": DEMO_ROLES}).json()
+    assert "Genre" in cfg["summary"]["lens_attrs"]          # attribut proposé comme lentille
+    # auteurs reliés via l'attribut Genre (sans connecteur de type)
+    g = client.get("/graph", params={"session_id": sid, "layers": "Auteur",
+                                      "connectors": "", "connector_attrs": "Genre"}).json()
+    assert all(n["type"] == "Auteur" for n in g["nodes"])
+    assert len(g["edges"]) > 0                              # le genre relie des auteurs
+
+
 def test_unknown_session_404():
     assert client.get("/graph?session_id=inexistant").status_code == 404
 

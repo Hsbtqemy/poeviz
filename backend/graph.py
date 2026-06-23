@@ -121,6 +121,9 @@ class MasterMeta:
     # Colonne définissant l'IDENTITÉ de la charnière : les lignes qui partagent
     # cette valeur fusionnent en une seule charnière (None = une ligne = une charnière).
     hinge_key: str | None = None
+    # Colonnes-attribut catégorielles utilisables comme « lentille » (connecteur)
+    # sans devenir des nœuds — proposées dans le panneau des couches.
+    lens_attrs: list[str] = field(default_factory=list)
 
     def to_summary(self) -> dict[str, Any]:
         return {
@@ -137,6 +140,7 @@ class MasterMeta:
             "unit_singular": self.unit_singular,
             "unit_plural": self.unit_plural,
             "hinge_key": self.hinge_key,
+            "lens_attrs": self.lens_attrs,
             "n_nodes_total": sum(self.type_counts.values()),
         }
 
@@ -224,6 +228,7 @@ def build_master_graph(df, roles: dict[str, str], separators: list[str],
     type_counts = _count_types(G)
     palette = assign_palette(node_cols)
     n_works = sum(1 for _, d in G.nodes(data=True) if d.get("kind") == "work")
+    lens_attrs = _lens_attr_cols(df, attr_cols, time_col)
     meta = MasterMeta(
         roles={str(k): v for k, v in roles.items()},
         node_cols=[str(c) for c in node_cols],
@@ -239,8 +244,33 @@ def build_master_graph(df, roles: dict[str, str], separators: list[str],
         unit_singular=unit_singular,
         unit_plural=unit_plural,
         hinge_key=hk,
+        lens_attrs=lens_attrs,
     )
     return G, meta
+
+
+# Au-delà de ce nombre de valeurs distinctes, une colonne-attribut n'est pas une
+# bonne lentille (trop fine) ; en deçà de 2, elle ne relie rien.
+LENS_ATTR_MAX_UNIQUE = 40
+
+
+def _lens_attr_cols(df, attr_cols, time_col) -> list[str]:
+    """Colonnes-attribut catégorielles (2..N valeurs, hors colonne temporelle)
+    proposables comme lentille de connexion sans devenir des nœuds."""
+    out: list[str] = []
+    tc = str(time_col) if time_col is not None else None
+    for c in attr_cols:
+        if str(c) == tc:
+            continue
+        vals: set[str] = set()
+        for v in df[c]:
+            if not _is_blank(v):
+                vals.add(_normalize_scalar(v))
+            if len(vals) > LENS_ATTR_MAX_UNIQUE:
+                break
+        if 2 <= len(vals) <= LENS_ATTR_MAX_UNIQUE:
+            out.append(str(c))
+    return out
 
 
 def _auto_time_col(df) -> str | None:
@@ -289,12 +319,19 @@ def assign_palette(node_cols: Iterable[str]) -> dict[str, str]:
 
 @dataclass
 class ProjectionParams:
-    layers: list[str] | None = None          # types d'entités visibles (None = tous)
+    layers: list[str] | None = None          # types d'entités AFFICHÉS (None = tous)
     link_mode: str = "report"                # "report" | "cut"
     show_hinge: bool = False                  # afficher les nœuds-ouvrages ?
     year_min: int | None = None
     year_max: int | None = None
     pivot: str | None = None                  # type ou id de nœud central (info pour le front)
+    # Types qui RELIENT sans être affichés (ponts en mode report). None = tous les
+    # types masqués relient (comportement historique). Liste = seuls ces types
+    # relient ; les autres types masqués sont totalement exclus (ni vus, ni reliants).
+    connector_layers: list[str] | None = None
+    # Colonnes-ATTRIBUT utilisées comme lentille : deux lignes partageant la même
+    # valeur (ex. même Genre) sont reliées, sans que l'attribut devienne un nœud.
+    connector_attrs: list[str] | None = None
 
 
 def project(G: nx.Graph, meta: MasterMeta, params: ProjectionParams) -> nx.Graph:
@@ -337,6 +374,10 @@ def project(G: nx.Graph, meta: MasterMeta, params: ProjectionParams) -> nx.Graph
         bridge_nodes |= active_works
     for n, d in G.nodes(data=True):
         if d.get("kind") == "entity" and d["type"] not in visible_types:
+            # Si une liste de connecteurs est fournie, seuls ces types masqués
+            # relient ; les autres sont exclus (lentille de découverte).
+            if params.connector_layers is not None and d["type"] not in params.connector_layers:
+                continue
             if any(w in active_works for w in G.neighbors(n)):
                 bridge_nodes.add(n)
 
@@ -353,11 +394,22 @@ def project(G: nx.Graph, meta: MasterMeta, params: ProjectionParams) -> nx.Graph
             if _edge_touches_active(G, u, v, active_works):
                 _bump_edge(P, u, v, 1)
 
-    # 4b. Mode report : contracter les ponts. Chaque composante connexe de
-    #     l'induit sur les ponts relie en clique ses nœuds visibles frontières.
-    if params.link_mode == "report" and bridge_nodes:
-        bridge_sub = G.subgraph(bridge_nodes)
-        for component in nx.connected_components(bridge_sub):
+    # 4b. Mode report : on contracte les « ponts ». Graphe auxiliaire H = ponts
+    #     (charnière + types connecteurs masqués) + connecteurs-ATTRIBUT virtuels
+    #     (lignes partageant une même valeur d'attribut → reliées par un jeton).
+    #     Chaque composante connexe de H relie en clique ses nœuds visibles.
+    if params.link_mode == "report":
+        H = nx.Graph()
+        H.add_nodes_from(bridge_nodes)
+        H.add_edges_from(G.subgraph(bridge_nodes).edges())
+        if params.connector_attrs:
+            for w in active_works:
+                attrs = G.nodes[w].get("attributes") or {}
+                for col in params.connector_attrs:
+                    val = attrs.get(col)
+                    if val:
+                        H.add_edge(w, f"__attr__::{col}::{val}")
+        for component in nx.connected_components(H):
             boundary = _visible_boundary(G, component, visible_nodes)
             for a, b in itertools.combinations(sorted(boundary), 2):
                 _bump_edge(P, a, b, 1)
@@ -386,13 +438,74 @@ def _edge_touches_active(G: nx.Graph, u: str, v: str, active_works: set[str]) ->
 
 
 def _visible_boundary(G: nx.Graph, component: set[str], visible_nodes: set[str]) -> set[str]:
-    """Nœuds visibles adjacents (dans le maître) à une composante de ponts."""
+    """Nœuds visibles d'une composante de report : membres déjà visibles (ex. un
+    ouvrage affiché) + voisins visibles dans le maître. Tolère les jetons virtuels
+    (connecteurs-attribut), absents de G."""
     boundary: set[str] = set()
-    for hidden in component:
-        for nb in G.neighbors(hidden):
-            if nb in visible_nodes:
-                boundary.add(nb)
+    for m in component:
+        if m in visible_nodes:
+            boundary.add(m)
+        if m in G:                       # jeton réel → ses voisins visibles
+            for nb in G.neighbors(m):
+                if nb in visible_nodes:
+                    boundary.add(nb)
     return boundary
+
+
+def edge_detail(G: nx.Graph, meta: MasterMeta, u: str, v: str,
+                params: ProjectionParams) -> dict[str, Any]:
+    """Explique POURQUOI deux nœuds sont reliés : ouvrages communs (co-occurrence
+    directe) et entités intermédiaires partagées (ex. un même traducteur). Sert à
+    dé-anonymiser une arête. Respecte la fenêtre temporelle courante."""
+    if u not in G or v not in G:
+        raise KeyError((u, v))
+
+    def work_active(w: str) -> bool:
+        d = G.nodes[w]
+        if d.get("kind") != "work":
+            return False
+        y = d.get("year")
+        if y is None:
+            return True
+        if params.year_min is not None and y < params.year_min:
+            return False
+        if params.year_max is not None and y > params.year_max:
+            return False
+        return True
+
+    def works_of(n: str) -> set[str]:
+        if G.nodes[n].get("kind") == "work":
+            return {n} if work_active(n) else set()
+        return {w for w in G.neighbors(n) if work_active(w)}
+
+    works_u, works_v = works_of(u), works_of(v)
+    shared_works = sorted(works_u & works_v, key=lambda w: G.nodes[w].get("row", 0))
+
+    def co_entities(works: set[str], exclude: str) -> dict[str, dict]:
+        out: dict[str, dict] = {}
+        for w in works:
+            for nb in G.neighbors(w):
+                nd = G.nodes[nb]
+                if nd.get("kind") == "entity" and nb != exclude:
+                    out[nb] = nd
+        return out
+
+    cu, cv = co_entities(works_u, u), co_entities(works_v, v)
+    shared_via: dict[str, list[str]] = {}
+    for nid in (set(cu) & set(cv)):
+        nd = G.nodes[nid]
+        shared_via.setdefault(nd["type"], []).append(nd.get("label", nid))
+
+    return {
+        "source": u, "target": v,
+        "source_label": G.nodes[u].get("label", u),
+        "target_label": G.nodes[v].get("label", v),
+        "shared_works": [
+            {"label": G.nodes[w].get("label", w), "year": G.nodes[w].get("year")}
+            for w in shared_works
+        ],
+        "shared_via": {t: sorted(set(vs)) for t, vs in sorted(shared_via.items())},
+    }
 
 
 def _bump_edge(P: nx.Graph, u: str, v: str, w: int) -> None:

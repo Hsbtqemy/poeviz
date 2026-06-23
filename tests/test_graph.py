@@ -130,3 +130,64 @@ def test_edge_set_not_leaked():
 def test_empty_roles_no_entities():
     G, meta = graph.build_master_graph(make_df(), {"Titre": "edge"}, SEP)
     assert sum(meta.type_counts.values()) == 0           # aucune entité
+
+
+def make_lens_df():
+    # A & B partagent le traducteur Tx ; A & C partagent l'éditeur E1.
+    return pd.DataFrame({
+        "Titre": ["T1", "T2", "T3"],
+        "Auteur": ["A", "B", "C"],
+        "Traducteur": ["Tx", "Tx", "Ty"],
+        "Éditeur": ["E1", "E2", "E1"],
+    })
+
+
+LENS_ROLES = {"Titre": "edge", "Auteur": "node", "Traducteur": "node", "Éditeur": "node"}
+
+
+def test_edge_detail_explains_link():
+    G, meta = graph.build_master_graph(make_lens_df(), LENS_ROLES, SEP)
+    d = graph.edge_detail(G, meta, "Auteur::A", "Auteur::B", graph.ProjectionParams())
+    assert d["shared_via"].get("Traducteur") == ["Tx"]   # reliés via le traducteur
+    assert not d["shared_works"]                          # pas d'ouvrage commun
+    d2 = graph.edge_detail(G, meta, "Auteur::A", "Auteur::C", graph.ProjectionParams())
+    assert d2["shared_via"].get("Éditeur") == ["E1"]
+
+
+def test_connector_layers_isolate_lens():
+    """La lentille : seuls les types connecteurs relient ; les autres sont exclus."""
+    G, meta = graph.build_master_graph(make_lens_df(), LENS_ROLES, SEP)
+    via_trad = graph.project(G, meta, graph.ProjectionParams(
+        layers=["Auteur"], connector_layers=["Traducteur"]))
+    assert via_trad.has_edge("Auteur::A", "Auteur::B")       # via traducteur Tx
+    assert not via_trad.has_edge("Auteur::A", "Auteur::C")   # éditeur exclu
+    via_edit = graph.project(G, meta, graph.ProjectionParams(
+        layers=["Auteur"], connector_layers=["Éditeur"]))
+    assert via_edit.has_edge("Auteur::A", "Auteur::C")       # via éditeur E1
+    assert not via_edit.has_edge("Auteur::A", "Auteur::B")
+
+
+def test_connector_attr_lens():
+    """Une colonne-attribut (ex. Genre) peut servir de lentille sans devenir nœud."""
+    df = pd.DataFrame({
+        "Titre": ["T1", "T2", "T3"],
+        "Auteur": ["A", "B", "C"],
+        "Genre": ["Roman", "Roman", "Essai"],     # A & B partagent le genre
+    })
+    roles = {"Titre": "edge", "Auteur": "node", "Genre": "attribute"}
+    G, meta = graph.build_master_graph(df, roles, SEP)
+    assert "Genre" in meta.lens_attrs                       # proposée comme lentille
+    assert not any(d.get("type") == "Genre" for _, d in G.nodes(data=True))  # pas un nœud
+    # sans lentille : auteurs seuls, rien ne les relie
+    p0 = graph.project(G, meta, graph.ProjectionParams(layers=["Auteur"], connector_layers=[]))
+    assert not p0.has_edge("Auteur::A", "Auteur::B")
+    # avec Genre en lentille : A & B (Roman) reliés ; C (Essai) à part
+    p = graph.project(G, meta, graph.ProjectionParams(
+        layers=["Auteur"], connector_layers=[], connector_attrs=["Genre"]))
+    assert p.has_edge("Auteur::A", "Auteur::B")
+    assert not p.has_edge("Auteur::A", "Auteur::C")
+
+
+def test_lens_attrs_excludes_time_column():
+    G, meta = graph.build_master_graph(make_df(), ROLES, SEP)   # Année = colonne temps
+    assert "Année" not in meta.lens_attrs

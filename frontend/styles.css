@@ -125,6 +125,29 @@ button{font-family:inherit;cursor:pointer}
 .layer.off .tog::after{left:2px}
 .layer .sw{width:10px;height:10px;border-radius:3px;flex:none}
 .layer .ct{margin-left:auto;font-size:11px;color:var(--muted);font-family:system-ui,Arial,sans-serif}
+/* Couches à 3 états (affiché / relie / masqué) — clic pour cycler */
+.layer3{display:flex;align-items:center;gap:9px;padding:6px 8px;margin-bottom:3px;font-size:13px;
+  user-select:none;cursor:pointer;border:1px solid var(--line);border-radius:8px;background:#fff}
+.layer3 .sw{width:10px;height:10px;border-radius:3px;flex:none}
+.layer3 .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.layer3 .st{font-size:10px;text-transform:uppercase;letter-spacing:.5px;font-family:system-ui,Arial,sans-serif;
+  padding:2px 7px;border-radius:9px;flex:none}
+.layer3 .ct{font-size:11px;color:var(--muted);font-family:system-ui,Arial,sans-serif;flex:none}
+.layer3.shown .st{background:var(--green);color:#fff}
+.layer3.connector{border-style:dashed}
+.layer3.connector .st{background:var(--amber);color:#fff}
+.layer3.connector .nm{font-style:italic}
+.layer3.off{opacity:.5}
+.layer3.off .sw{filter:grayscale(1)}
+.layer3.off .st{background:var(--panel2);color:var(--muted)}
+/* Infos utilisables comme lentille : pastille creuse (pas une vraie couleur de type) */
+.grp-sub{margin:10px 0 5px;font-size:10px;text-transform:uppercase;letter-spacing:1px;
+  color:var(--muted);font-family:system-ui,Arial,sans-serif}
+.layer3.attr{opacity:1}
+.layer3.attr .attr-sw{background:transparent;border:1.5px dashed var(--muted)}
+.layer3.attr.connector .attr-sw{background:var(--amber);border-color:var(--amber)}
+.layer3.attr.off{opacity:.75}
+.layer3.attr.off .st{background:var(--panel2);color:var(--muted)}
 .adv{border-top:1px solid var(--line);padding-top:6px}
 .adv-toggle{font-size:12.5px;color:var(--muted);font-style:italic;cursor:pointer;
   display:flex;justify-content:space-between;align-items:center;padding:6px 0}

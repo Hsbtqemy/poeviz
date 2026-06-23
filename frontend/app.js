@@ -12,6 +12,8 @@
     sessionId: null, filename: null,
     profile: null, summary: null,
     layersOn: new Set(),
+    connectors: new Set(),       // couches-NŒUD « connecteur » (relient sans être affichées)
+    connectorAttrs: new Set(),   // colonnes-INFO utilisées comme lentille
     pivot: null,                 // type d'entité (colonne) ou null
     linkMode: "report",
     pivotMode: "reorganize",
@@ -260,6 +262,8 @@
     el["brand-sub"].textContent = State.filename;
 
     State.layersOn = new Set(State.summary.node_layers);
+    State.connectors = new Set();          // aucune lentille au départ (tout affiché)
+    State.connectorAttrs = new Set();
     State.pivot = null;
     State.fullYearMin = State.summary.year_min; State.fullYearMax = State.summary.year_max;
     State.yearMin = State.summary.year_min; State.yearMax = State.summary.year_max;
@@ -269,7 +273,7 @@
       NetView.init({
         container: $("sigma"), cards: $("cards"), tooltip: $("tooltip"),
         statusEl: el["statusline"], timeAxis: el["time-axis"],
-        onSelect: selectNode, onBackground: deselect,
+        onSelect: selectNode, onBackground: deselect, onEdgeHover: edgeHover,
       });
       window.__netInit = true;
       window.addEventListener("resize", () => {
@@ -368,21 +372,67 @@
     refreshGraph({ pivotChanged: true });
   }
 
+  // Chaque couche a 3 états (cliquer pour cycler), pour explorer SANS reconfigurer :
+  //   affiché  → le type est un nœud visible
+  //   relie    → invisible mais relie les nœuds visibles (la « lentille »)
+  //   masqué   → exclu (ni vu, ni reliant)
+  function layerState(t) {
+    if (State.layersOn.has(t)) return "shown";
+    if (State.connectors.has(t)) return "connector";
+    return "off";          // « off », pas « hidden » (réservé par .hidden global)
+  }
+  function cycleLayer(t) {
+    if (State.layersOn.has(t)) { State.layersOn.delete(t); State.connectors.add(t); }
+    else if (State.connectors.has(t)) { State.connectors.delete(t); }
+    else { State.layersOn.add(t); }
+  }
+  const LAYER_STATE_LABEL = { shown: "affiché", connector: "relie", off: "masqué" };
+
   function buildLayers() {
     el["layers-list"].innerHTML = "";
     State.summary.node_layers.forEach((t) => {
-      const row = document.createElement("label");
-      row.className = "layer";
+      const row = document.createElement("div");
       const color = State.summary.palette[t] || "#8A857B";
       const count = State.summary.type_counts[t] || 0;
-      row.innerHTML = `<span class="tog"></span><span class="sw" style="background:${color}"></span>${esc(t)}<span class="ct">${count}</span>`;
-      row.addEventListener("click", () => {
-        if (State.layersOn.has(t)) State.layersOn.delete(t); else State.layersOn.add(t);
-        row.classList.toggle("off", !State.layersOn.has(t));
-        refreshGraph();
-      });
+      const paint = () => {
+        const st = layerState(t);
+        row.className = "layer3 " + st;
+        row.innerHTML = `<span class="sw" style="background:${color}"></span>` +
+          `<span class="nm">${esc(t)}</span>` +
+          `<span class="st">${LAYER_STATE_LABEL[st]}</span>` +
+          `<span class="ct">${count}</span>`;
+      };
+      row.title = "Cliquer pour cycler : affiché → relie (lentille) → masqué";
+      row.addEventListener("click", () => { cycleLayer(t); paint(); refreshGraph(); });
+      paint();
       el["layers-list"].appendChild(row);
     });
+    // Infos utilisables comme lentille : relier par un attribut (Genre, Langue…)
+    // sans le transformer en nœud. Bascule info ↔ relie (réversible).
+    const lensAttrs = State.summary.lens_attrs || [];
+    if (lensAttrs.length) {
+      const hdr = document.createElement("div");
+      hdr.className = "grp-sub";
+      hdr.textContent = "Relier aussi par (infos)";
+      el["layers-list"].appendChild(hdr);
+      lensAttrs.forEach((c) => {
+        const row = document.createElement("div");
+        const paint = () => {
+          const on = State.connectorAttrs.has(c);
+          row.className = "layer3 attr " + (on ? "connector" : "off");
+          row.innerHTML = `<span class="sw attr-sw"></span><span class="nm">${esc(c)}</span>` +
+            `<span class="st">${on ? "relie" : "info"}</span>`;
+        };
+        row.title = "Cliquer : info ↔ relie (lentille, sans devenir un nœud)";
+        row.addEventListener("click", () => {
+          if (State.connectorAttrs.has(c)) State.connectorAttrs.delete(c);
+          else State.connectorAttrs.add(c);
+          paint(); refreshGraph();
+        });
+        paint();
+        el["layers-list"].appendChild(row);
+      });
+    }
     el["hinge-layer"].classList.toggle("off", !State.showHinge);
     el["hinge-layer"].onclick = () => {
       State.showHinge = !State.showHinge;
@@ -587,6 +637,10 @@
     const p = new URLSearchParams();
     p.set("session_id", State.sessionId);
     p.set("layers", [...State.layersOn].join(","));
+    // Toujours envoyé (même vide) → sémantique « lentille » : seules ces couches
+    // relient ; les couches masquées non-connectrices sont exclues.
+    p.set("connectors", [...State.connectors].join(","));
+    p.set("connector_attrs", [...State.connectorAttrs].join(","));
     p.set("link_mode", State.linkMode);
     p.set("show_hinge", State.showHinge);
     p.set("color_by", State.colorBy);
@@ -670,6 +724,30 @@
     State.selected = null;
     NetView.setHighlight(null);
     el["detail"].classList.remove("open");
+  }
+
+  // Survol d'une arête → on demande au backend POURQUOI les deux nœuds sont reliés
+  // (ouvrages communs + intermédiaires partagés), et on l'affiche en info-bulle.
+  let edgeTipT = null;
+  function edgeHover(s, t, show) {
+    clearTimeout(edgeTipT);
+    edgeTipT = setTimeout(async () => {
+      try {
+        let url = `/edge?session_id=${State.sessionId}&source=${encodeURIComponent(s)}&target=${encodeURIComponent(t)}`;
+        if (State.yearMin != null) url += `&year_min=${State.yearMin}&year_max=${State.yearMax}`;
+        show(formatEdge(await getJSON(url)));
+      } catch (e) { /* survol fugace : on ignore */ }
+    }, 70);
+  }
+  function formatEdge(d) {
+    let html = `${esc(d.source_label)} ↔ ${esc(d.target_label)}`;
+    const works = d.shared_works || [];
+    const via = Object.entries(d.shared_via || {}).map(([t, arr]) => `${esc(t)} : ${esc(arr.join(", "))}`);
+    if (works.length)
+      html += `<div class="t2">${unitN(works.length)} en commun : ${esc(works.map((w) => w.label).join(" · "))}</div>`;
+    if (via.length) html += `<div class="t2">via ${via.join(" · ")}</div>`;
+    if (!works.length && !via.length) html += `<div class="t2">lien indirect (plusieurs intermédiaires)</div>`;
+    return html;
   }
 
   function renderDetail(d) {
@@ -806,6 +884,8 @@
       const lo = cumulative ? State.fullYearMin : a;
       const p = new URLSearchParams({
         session_id: State.sessionId, layers: [...State.layersOn].join(","),
+        connectors: [...State.connectors].join(","),   // même lentille que la vue courante
+        connector_attrs: [...State.connectorAttrs].join(","),
         link_mode: State.linkMode, show_hinge: State.showHinge,
         color_by: State.colorBy, size_by: State.sizeBy, year_min: lo, year_max: b,
       });

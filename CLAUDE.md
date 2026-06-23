@@ -67,6 +67,12 @@ Quand une couche-charnière (ex. le nœud-ouvrage, ou un type masqué) est retir
 - **report** (défaut) : les nœuds qui étaient reliés *via* l'élément masqué sont reliés directement entre eux (projection).
 - **cut** : le lien disparaît, la carte se déconnecte.
 
+**Couches à 3 états (lentille de découverte, sans reconstruire).** Chaque type peut être *affiché* (nœud visible), *connecteur* (invisible mais relie — pont en report) ou *masqué/exclu*. Côté API, `ProjectionParams.connector_layers` (param `connectors` de `/graph`) : `None` = tous les types masqués relient (rétro-compat) ; **liste** = seuls ces types relient, les autres masqués sont exclus. Permet d'explorer « auteurs reliés via traducteur » puis « via éditeur » en direct, sans repasser par l'écran des rôles.
+
+**Lentille par attribut.** Une colonne en rôle *info* (catégorielle) peut aussi relier sans devenir un nœud : `ProjectionParams.connector_attrs` (param `connector_attrs`) relie en `report` les lignes partageant la même valeur d'attribut, via des jetons virtuels (le graphe maître n'est pas modifié). Les attributs proposables sont listés dans `meta.lens_attrs` (catégoriels, hors colonne temporelle). Réversible : retirer l'attribut des connecteurs le remet en simple *info*.
+
+**Arêtes explicables.** `/edge?source&target` (→ `graph.edge_detail`) renvoie *pourquoi* deux nœuds sont reliés : ouvrages communs + entités intermédiaires partagées (ex. un même traducteur). Le front l'affiche au survol — les arêtes ne sont pas anonymes.
+
 ### 3.6 Pivot (« organiser autour de »)
 Sélecteur listant **dynamiquement** les colonnes actuellement en rôle node, + une option « aucun pivot » (force libre). Deux modes, **réglables** :
 - **reorganize** : le pivot influence la disposition spatiale (le pivot et ses voisins se réorganisent autour).
@@ -134,7 +140,8 @@ Destination première des images : **intégration dans Word** → PNG net + SVG 
 - `POST /upload` (xlsx) → `{session_id, sheets[]}`
 - `GET /profile?session_id&sheet` → colonnes + type + unicité + rôle suggéré + `suggested_unit` (nom de ligne dérivé de la feuille)
 - `POST /configure` `{session_id, roles{col:role}, separators?, unit_singular?, unit_plural?, hinge_key?}` → construit le graphe maître, renvoie un résumé (incluant `unit_singular`/`unit_plural`/`hinge_key`)
-- `GET /graph?session_id&pivot&layers&link_mode&color_by&year_min&year_max` → nœuds+arêtes projetés (avec positions, taille, couleur, cluster) pour Sigma
+- `GET /graph?session_id&pivot&layers&connectors&connector_attrs&link_mode&color_by&year_min&year_max` → nœuds+arêtes projetés (avec positions, taille, couleur, cluster) pour Sigma
+- `GET /edge?session_id&source&target` → explication d'une arête (ouvrages communs + intermédiaires partagés)
 - `GET /node/{id}?session_id` → détail d'un nœud (attributs, stats, ouvrages liés)
 - `GET /metrics?session_id&...` → tableau des métriques
 - `POST /export` `{session_id, view_state, scope, format, dimensions, labels, unit_singular?, unit_plural?}` → fichier

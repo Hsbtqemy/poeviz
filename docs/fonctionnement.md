@@ -176,6 +176,12 @@ Concrètement, en mode *report*, on prend chaque groupe connexe de nœuds masqu�
 relie « en clique » ses voisins visibles. C'est une **projection de graphe biparti
 vers un graphe à un mode**, technique classique en analyse de réseaux.
 
+- **Lentille (3 états par couche)** : chaque type peut être *affiché*, *connecteur*
+  (invisible mais relie) ou *masqué* (exclu). On découvre ainsi « auteurs reliés via
+  traducteur » puis « via éditeur » **en direct**, sans reconstruire (`connector_layers`).
+  Une colonne *info* (genre, langue…) peut aussi servir de lentille sans devenir un
+  nœud (`connector_attrs`, jetons virtuels) — réversible (retour en simple info).
+
 > **Méthodologie : projeter, pas reconstruire.** Le graphe maître est immuable ;
 > changer un réglage ne fait que recalculer une projection. D'où l'instantanéité.
 
@@ -214,7 +220,10 @@ les positions reçues. Le rendu gère :
   carte d'une charnière** (auteur, traducteur, année…) se choisissent à la volée
   (Options avancées) ;
 - la **sélection** : cliquer un nœud illumine son voisinage et estompe le reste ;
-- le **survol** (tooltip), le **déplacement** d'un nœud à la souris, et un mode
+- le **survol d'une arête** : info-bulle expliquant *pourquoi* deux nœuds sont reliés
+  (ouvrages communs + intermédiaires partagés — via `/edge`), pour que les liens ne
+  soient pas anonymes ;
+- le **survol d'un nœud** (tooltip), le **déplacement** à la souris, et un mode
   **réseau temporel** où l'axe horizontal devient le temps.
 
 > **Pourquoi WebGL ?** Pour rester fluide à plusieurs centaines/milliers de nœuds,

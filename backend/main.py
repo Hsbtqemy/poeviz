@@ -121,13 +121,25 @@ class ExportBody(BaseModel):
 
 def parse_projection(layers: str | None, link_mode: str, show_hinge: bool,
                      year_min: int | None, year_max: int | None,
-                     pivot: str | None) -> graph.ProjectionParams:
+                     pivot: str | None,
+                     connectors: str | None = None,
+                     connector_attrs: str | None = None) -> graph.ProjectionParams:
     layer_list = None
     if layers is not None and layers != "":
-        layer_list = [s for s in layers.split(",") if s]
+        layer_list = [x for x in layers.split(",") if x]
+    # Connecteurs : ABSENT (None) = tous les types masqués relient (rétro-compat).
+    # PRÉSENT même vide ("") = liste explicite → seuls ces types relient, les
+    # autres types masqués sont exclus (mode lentille piloté par le front).
+    connector_list = None
+    if connectors is not None:
+        connector_list = [x for x in connectors.split(",") if x]
+    attr_list = None
+    if connector_attrs is not None:
+        attr_list = [x for x in connector_attrs.split(",") if x]
     return graph.ProjectionParams(
         layers=layer_list, link_mode=link_mode, show_hinge=show_hinge,
         year_min=year_min, year_max=year_max, pivot=pivot or None,
+        connector_layers=connector_list, connector_attrs=attr_list,
     )
 
 
@@ -142,6 +154,8 @@ def build_view(session: Session, params: graph.ProjectionParams,
     # On les mémorise → changer la couleur ou revenir sur une vue est instantané.
     cache_key = (
         tuple(sorted(params.layers)) if params.layers is not None else None,
+        tuple(sorted(params.connector_layers)) if params.connector_layers is not None else None,
+        tuple(sorted(params.connector_attrs)) if params.connector_attrs is not None else None,
         params.link_mode, params.show_hinge, params.year_min, params.year_max, size_by,
     )
     cache = session.metrics_cache
@@ -352,11 +366,33 @@ def get_graph(
     pivot: str | None = None,
     year_min: int | None = None,
     year_max: int | None = None,
+    connectors: str | None = None,
+    connector_attrs: str | None = None,
 ) -> dict[str, Any]:
     session = get_session(session_id)
     require_master(session)
-    params = parse_projection(layers, link_mode, show_hinge, year_min, year_max, pivot)
+    params = parse_projection(layers, link_mode, show_hinge, year_min, year_max,
+                              pivot, connectors, connector_attrs)
     return build_view(session, params, color_by=color_by, size_by=size_by)
+
+
+@app.get("/edge")
+def get_edge(
+    session_id: str,
+    source: str,
+    target: str,
+    year_min: int | None = None,
+    year_max: int | None = None,
+) -> dict[str, Any]:
+    """Explique pourquoi deux nœuds sont reliés (ouvrages communs + intermédiaires
+    partagés) — pour dé-anonymiser une arête au survol."""
+    session = get_session(session_id)
+    require_master(session)
+    params = graph.ProjectionParams(year_min=year_min, year_max=year_max)
+    try:
+        return graph.edge_detail(session.master, session.meta, source, target, params)
+    except KeyError:
+        raise HTTPException(404, "Arête introuvable dans le graphe.")
 
 
 @app.get("/cards")
