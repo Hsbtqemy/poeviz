@@ -246,6 +246,19 @@ button{font-family:inherit;cursor:pointer}
 .snap-cell .cap .cnt{font-size:10.5px;color:var(--muted)}
 .snap-cell svg{display:block;width:100%;height:auto;background:radial-gradient(circle at 50% 45%,#fff,#FBF9F4)}
 
+/* chronologie */
+.modal.chrono-modal{width:min(1100px,95vw)}
+.chrono-scroll{max-height:68vh;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:11px;padding:6px}
+.chrono-scroll svg{display:block;width:100%;height:auto}
+.chrono-row-bg:hover{fill:#F4F1EA}
+.chrono-dot{cursor:pointer}
+.chrono-dot:hover{stroke:var(--ink);stroke-width:1.5}
+.chrono-lbl{font-family:system-ui,Arial,sans-serif;font-size:11px;fill:var(--ink)}
+.chrono-axis{font-family:system-ui,Arial,sans-serif;font-size:10px;fill:var(--muted)}
+.chrono-life{stroke:#CFC9BD;stroke-width:1.4}
+.chrono-grid{stroke:#EFEDE7;stroke-width:1}
+.chrono-leg{font-family:system-ui,Arial,sans-serif;font-size:11px;fill:var(--ink)}
+
 /* spinner */
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--line);
   border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}

@@ -300,6 +300,64 @@ def timeline(session_id: str) -> dict[str, Any]:
     }
 
 
+@app.get("/chronology")
+def chronology(session_id: str, pivot_type: str | None = None,
+               color_attr: str | None = None) -> dict[str, Any]:
+    """Données pour la vue Chronologie : une entité du type pivot par ligne,
+    ses ouvrages placés dans le temps. Couvre tout l'historique (indépendant du
+    curseur). Les points peuvent être colorés par un attribut au choix."""
+    session = get_session(session_id)
+    require_master(session)
+    G, meta = session.master, session.meta
+    ptype = pivot_type if (pivot_type in meta.node_cols) else (meta.node_cols[0] if meta.node_cols else None)
+    if ptype is None:
+        raise HTTPException(400, "Aucun type d'entité disponible pour la chronologie.")
+    if color_attr not in (meta.attr_cols or []):
+        color_attr = None
+
+    entities = []
+    values: list[str] = []
+    for n, d in G.nodes(data=True):
+        if d.get("kind") != "entity" or d.get("type") != ptype:
+            continue
+        works = []
+        for w in G.neighbors(n):
+            wd = G.nodes[w]
+            if wd.get("kind") != "work" or wd.get("year") is None:
+                continue
+            cv = wd.get("attributes", {}).get(color_attr) if color_attr else None
+            if cv is not None and cv not in values:
+                values.append(cv)
+            works.append({
+                "year": wd["year"], "title": wd.get("label", ""),
+                "color_value": cv, "attributes": wd.get("attributes", {}),
+            })
+        if not works:
+            continue
+        works.sort(key=lambda x: x["year"])
+        entities.append({
+            "id": n, "label": d.get("label", n),
+            "first": works[0]["year"], "last": works[-1]["year"], "works": works,
+        })
+
+    # Couleur des points : par valeur d'attribut, sinon couleur du type pivot.
+    color_map = {v: graph.PALETTE_CYCLE[i % len(graph.PALETTE_CYCLE)]
+                 for i, v in enumerate(sorted(values, key=str.lower))}
+    default_color = meta.palette.get(ptype, "#1D8A68")
+    for e in entities:
+        for w in e["works"]:
+            w["color"] = color_map.get(w["color_value"], default_color)
+    # Lignes triées par année du premier ouvrage (plus récent en haut).
+    entities.sort(key=lambda e: (e["first"], e["label"]), reverse=True)
+
+    return {
+        "pivot_type": ptype, "color_attr": color_attr,
+        "year_min": meta.year_min, "year_max": meta.year_max,
+        "color_map": color_map, "default_color": default_color,
+        "attr_cols": meta.attr_cols, "entities": entities,
+    }
+
+
 @app.get("/node/{node_id:path}")
 def get_node(
     node_id: str,
@@ -340,13 +398,17 @@ def post_export(body: ExportBody):
     nodes = body.view.get("nodes", [])
     edges = body.view.get("edges", [])
     kind = body.kind
-    if kind != "small_multiples" and not nodes:
+    if kind not in ("small_multiples", "chronology") and not nodes:
         raise HTTPException(400, "Rien à exporter : la vue est vide.")
 
     try:
         if kind == "small_multiples":
             data, ctype = export.render_small_multiples(
                 body.panels or [], fmt=body.format, title=body.title)
+            ext = body.format.lower()
+        elif kind == "chronology":
+            data, ctype = export.render_chronology(
+                body.view or {}, fmt=body.format, title=body.title)
             ext = body.format.lower()
         elif kind == "image":
             data, ctype = export.render_image(

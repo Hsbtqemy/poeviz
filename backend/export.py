@@ -162,6 +162,61 @@ def render_small_multiples(panels: list[dict[str, Any]], fmt: str = "png",
     return buf.getvalue(), ctype
 
 
+def render_chronology(chrono: dict[str, Any], fmt: str = "png",
+                      title: str | None = None) -> tuple[bytes, str]:
+    """Dot-plot chronologique : une entité par ligne, ses ouvrages dans le temps,
+    un trait premier→dernier (durée d'activité), points colorés par attribut."""
+    entities = chrono.get("entities", [])
+    if not entities:
+        raise ValueError("Aucune entité à représenter dans la chronologie.")
+    ymin = chrono.get("year_min"); ymax = chrono.get("year_max")
+
+    n = len(entities)
+    fig, ax = plt.subplots(figsize=(11, max(3.0, 0.42 * n + 1.2)))
+    fig.patch.set_facecolor(PAPER); ax.set_facecolor(PAPER)
+
+    for i, e in enumerate(entities):
+        y = n - 1 - i  # première ligne (plus récente) en haut
+        if e["first"] != e["last"]:
+            ax.plot([e["first"], e["last"]], [y, y], color="#CFC9BD", linewidth=1.4, zorder=1)
+        for w in e["works"]:
+            ax.scatter(w["year"], y, s=90, c=w.get("color", "#1D8A68"),
+                       edgecolors="white", linewidths=1.0, zorder=2)
+    ax.set_yticks(range(n))
+    ax.set_yticklabels([e["label"] for e in reversed(entities)], fontsize=8)
+    ax.set_xlabel("Année", color=INK, fontsize=10)
+    if ymin is not None and ymax is not None:
+        ax.set_xlim(ymin - 2, ymax + 2)
+    ax.set_ylim(-1, n)
+    ax.grid(axis="x", color="#EAE6DC", linewidth=0.8)
+    for s in ("top", "right", "left"):
+        ax.spines[s].set_visible(False)
+    ax.tick_params(left=False)
+
+    color_map = chrono.get("color_map") or {}
+    if color_map:
+        from matplotlib.lines import Line2D
+        handles = [Line2D([0], [0], marker="o", linestyle="", markersize=8,
+                          markerfacecolor=c, markeredgecolor="white", label=str(v))
+                   for v, c in color_map.items()]
+        ax.legend(handles=handles, loc="lower right", fontsize=8, frameon=False)
+    ax.set_title(title or f"Chronologie — {chrono.get('pivot_type', '')}",
+                 color=INK, fontsize=13, loc="left", pad=10)
+    fig.tight_layout(pad=0.6)
+
+    buf = io.BytesIO(); fmt = fmt.lower()
+    if fmt == "png":
+        fig.savefig(buf, format="png", dpi=300, facecolor=PAPER, bbox_inches="tight"); ctype = "image/png"
+    elif fmt == "svg":
+        fig.savefig(buf, format="svg", facecolor=PAPER, bbox_inches="tight"); ctype = "image/svg+xml"
+    elif fmt == "pdf":
+        fig.savefig(buf, format="pdf", facecolor=PAPER, bbox_inches="tight"); ctype = "application/pdf"
+    else:
+        plt.close(fig); raise ValueError(f"Format non supporté : {fmt}")
+    plt.close(fig)
+    return buf.getvalue(), ctype
+
+
 def _labelled_nodes(nodes: list[dict], labels: str) -> list[dict]:
     if labels == "none":
         return []

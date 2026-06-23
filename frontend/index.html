@@ -163,6 +163,7 @@
         <span class="modepick" id="display-mode" title="Affichage des nœuds">
           <span data-v="auto" class="on">auto</span><span data-v="points">points</span><span data-v="cards">cartes</span>
         </span>
+        <button class="btn" id="chrono-btn" title="Frise chronologique par entité">Chronologie</button>
         <button class="btn" id="snapshots-btn" title="Grille d'instantanés par période">Instantanés</button>
         <button class="btn" id="export-btn">Exporter</button>
         <button class="btn primary" id="share-btn">Partager</button>
@@ -266,6 +267,30 @@
       <button class="btn" data-snapexp="svg">Export SVG</button>
     </div>
     <div class="snap-grid" id="snap-grid"></div>
+  </div>
+</div>
+
+<!-- ===================== Vue « chronologie » ===================== -->
+<div id="chrono-overlay" class="overlay hidden">
+  <div class="modal chrono-modal">
+    <div class="snap-head">
+      <div>
+        <h2 id="chrono-title">Chronologie</h2>
+        <div class="sub">Une ligne par entité ; chaque point est un ouvrage placé dans le temps.</div>
+      </div>
+      <button class="dclose" id="chrono-close" style="position:static;color:var(--ink)">✕</button>
+    </div>
+    <div class="snap-bar">
+      <span class="sans" style="font-size:12px;color:var(--muted)">Entité (suit « organiser autour de »)</span>
+      <select id="chrono-pivot"></select>
+      <span class="sans" style="font-size:12px;color:var(--muted)">Couleur des points</span>
+      <select id="chrono-color"><option value="">(aucune)</option></select>
+      <span style="flex:1"></span>
+      <span class="sans" style="font-size:12px;color:var(--muted)" id="chrono-status"></span>
+      <button class="btn" data-chronoexp="png">Export PNG</button>
+      <button class="btn" data-chronoexp="svg">Export SVG</button>
+    </div>
+    <div class="chrono-scroll" id="chrono-scroll"></div>
   </div>
 </div>
 

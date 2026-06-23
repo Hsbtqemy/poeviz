@@ -48,7 +48,9 @@
    "export-overlay", "exp-scope", "exp-hops", "exp-format", "exp-dim", "exp-labels",
    "exp-image", "exp-close", "exp-status",
    "snapshots-btn", "snapshots-overlay", "snap-close", "snap-interval",
-   "snap-cumulative", "snap-status", "snap-grid"
+   "snap-cumulative", "snap-status", "snap-grid",
+   "chrono-btn", "chrono-overlay", "chrono-close", "chrono-title",
+   "chrono-pivot", "chrono-color", "chrono-status", "chrono-scroll"
   ].forEach((id) => { el[id] = $(id); });
 
   // ------------------------------------------------------------------ API
@@ -424,8 +426,10 @@
     el["tl-play"].addEventListener("click", togglePlay);
     el["tl-speed"].addEventListener("change", (e) => { State.playSpeed = +e.target.value; });
     el["snapshots-btn"].addEventListener("click", openSnapshots);
+    el["chrono-btn"].addEventListener("click", openChronology);
     initExport();
     initSnapshots();
+    initChronology();
   }
 
   // ---------------------------------------------------------- rafraîchir la carte
@@ -676,6 +680,88 @@
     } catch (e) { el["snap-status"].textContent = "Échec : " + e.message; }
   }
 
+  // ----------------------------------------- chronologie (dot-plot par entité)
+  let chronoData = null;
+
+  function initChronology() {
+    el["chrono-close"].addEventListener("click", () => el["chrono-overlay"].classList.add("hidden"));
+    el["chrono-pivot"].addEventListener("change", buildChronology);
+    el["chrono-color"].addEventListener("change", buildChronology);
+    document.querySelectorAll("[data-chronoexp]").forEach((b) =>
+      b.addEventListener("click", () => exportChronology(b.dataset.chronoexp)));
+  }
+
+  function openChronology() {
+    const layers = State.summary.node_layers || [];
+    el["chrono-pivot"].innerHTML = layers.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
+    el["chrono-pivot"].value = State.pivot || layers[0] || "";
+    el["chrono-color"].innerHTML = `<option value="">(aucune)</option>` +
+      (State.summary.attr_cols || []).map((a) => `<option value="${esc(a)}">${esc(a)}</option>`).join("");
+    el["chrono-overlay"].classList.remove("hidden");
+    buildChronology();
+  }
+
+  async function buildChronology() {
+    el["chrono-status"].innerHTML = `<span class="spinner"></span> Calcul…`;
+    const p = new URLSearchParams({ session_id: State.sessionId });
+    if (el["chrono-pivot"].value) p.set("pivot_type", el["chrono-pivot"].value);
+    if (el["chrono-color"].value) p.set("color_attr", el["chrono-color"].value);
+    try {
+      chronoData = await getJSON("/chronology?" + p.toString());
+      el["chrono-title"].textContent = `Chronologie — ${chronoData.pivot_type}`;
+      renderChronoSVG(chronoData);
+      el["chrono-status"].textContent = `${chronoData.entities.length} entités`;
+    } catch (e) { el["chrono-status"].textContent = "Erreur : " + e.message; el["chrono-scroll"].innerHTML = ""; }
+  }
+
+  function renderChronoSVG(d) {
+    const ents = d.entities;
+    if (!ents.length) { el["chrono-scroll"].innerHTML = `<p style="padding:20px;color:var(--muted)">Aucune donnée temporelle pour ce type.</p>`; return; }
+    const W = 1000, ML = 210, MR = 30, MT = 16, MB = 42, RH = 26;
+    const H = MT + ents.length * RH + MB;
+    const x0 = ML, x1 = W - MR, ymin = d.year_min, ymax = d.year_max, span = (ymax - ymin) || 1;
+    const xFor = (yr) => x0 + ((yr - ymin) / span) * (x1 - x0);
+    let svg = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMinYMin meet">`;
+    const step = niceStep(span);
+    for (let yr = Math.ceil(ymin / step) * step; yr <= ymax; yr += step) {
+      const x = xFor(yr);
+      svg += `<line class="chrono-grid" x1="${x}" y1="${MT}" x2="${x}" y2="${H - MB}"/>`;
+      svg += `<text class="chrono-axis" x="${x}" y="${H - MB + 16}" text-anchor="middle">${yr}</text>`;
+    }
+    ents.forEach((e, i) => {
+      const y = MT + i * RH + RH / 2;
+      svg += `<rect class="chrono-row-bg" x="0" y="${MT + i * RH}" width="${W}" height="${RH}" fill="transparent"/>`;
+      svg += `<text class="chrono-lbl" x="${ML - 12}" y="${y + 4}" text-anchor="end">${esc(trunc(e.label, 30))}</text>`;
+      if (e.first !== e.last) svg += `<line class="chrono-life" x1="${xFor(e.first)}" y1="${y}" x2="${xFor(e.last)}" y2="${y}"/>`;
+      e.works.forEach((w) => {
+        const info = `${w.title} — ${w.year}` + (w.color_value ? ` · ${w.color_value}` : "");
+        svg += `<circle class="chrono-dot" cx="${xFor(w.year)}" cy="${y}" r="5.5" fill="${w.color}"><title>${esc(info)}</title></circle>`;
+      });
+    });
+    const cm = Object.entries(d.color_map || {});
+    if (cm.length) {
+      let lx = ML;
+      cm.forEach(([v, c]) => {
+        svg += `<circle cx="${lx}" cy="${H - 12}" r="5" fill="${c}"/><text class="chrono-leg" x="${lx + 9}" y="${H - 8}">${esc(v)}</text>`;
+        lx += 26 + String(v).length * 7;
+      });
+    }
+    svg += `</svg>`;
+    el["chrono-scroll"].innerHTML = svg;
+  }
+
+  async function exportChronology(fmt) {
+    if (!chronoData || !chronoData.entities.length) { el["chrono-status"].textContent = "Rien à exporter."; return; }
+    el["chrono-status"].innerHTML = `<span class="spinner"></span> Export…`;
+    try {
+      const res = await api("/export", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: State.sessionId, kind: "chronology", format: fmt,
+          title: `Chronologie — ${chronoData.pivot_type}`, view: chronoData }) });
+      downloadBlob(await res.blob(), `chronologie.${fmt}`);
+      el["chrono-status"].textContent = "Téléchargé ✓";
+    } catch (e) { el["chrono-status"].textContent = "Échec : " + e.message; }
+  }
+
   // ------------------------------------------------------------------ divers
   function shareStub() {
     flash("Partage : fonctionnalité de démonstration (lien non généré).");
@@ -688,6 +774,11 @@
   function esc(s) { const d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
   function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+  function trunc(s, n) { s = String(s || ""); return s.length > n ? s.slice(0, n - 1) + "…" : s; }
+  function niceStep(span) {
+    for (const s of [1, 2, 5, 10, 20, 25, 50, 100]) if (span / s <= 10) return s;
+    return 200;
+  }
   function updateEpochLegend(legend) {
     if (State.colorBy !== "epoch" || !legend) { el["epoch-legend"].classList.add("hidden"); return; }
     el["epoch-legend"].classList.remove("hidden");
