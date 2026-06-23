@@ -26,6 +26,7 @@
   let sigma = null;
   let graph = null;
   let cardsEl = null, tooltipEl = null, statusEl = null, timeAxisEl = null;
+  let axisDecorXEl = null, axisDecorYEl = null;   // graduations de la disposition « axes »
   let callbacks = {};
   const posCache = Object.create(null);   // id -> {x,y} (positions vivantes, persistant)
   const structPos = Object.create(null);  // id -> {x,y} (dernière dispo structurelle force/circ/random)
@@ -33,6 +34,8 @@
   // mode « réseau temporel » : X = temps, Y = celui de la disposition force (préservé)
   const TEMPORAL_WIDTH = 1200;
   let temporalMode = false, tYearMin = null, tYearMax = null;
+  // mode « axes » (X/Y porteurs de sens) : métadonnées pour dessiner les graduations
+  let axesMode = false, axisMetaX = null, axisMetaY = null;
 
   let focusSet = null;        // ids à garder en évidence (null = tout)
   let selected = null;        // nœud cliqué
@@ -51,6 +54,7 @@
   function init(opts) {
     cardsEl = opts.cards; tooltipEl = opts.tooltip; statusEl = opts.statusEl;
     timeAxisEl = opts.timeAxis;
+    axisDecorXEl = opts.axisDecorX; axisDecorYEl = opts.axisDecorY;
     callbacks = opts;
     graph = new Graph({ multi: false, type: "undirected" });
     sigma = new SigmaCtor(graph, opts.container, {
@@ -75,8 +79,8 @@
     // affiche la réponse en info-bulle (les arêtes ne sont plus anonymes).
     sigma.on("enterEdge", (e) => onEdgeEnter(e.edge));
     sigma.on("leaveEdge", () => { hoveredEdge = null; hideTooltip(); });
-    sigma.getCamera().on("updated", () => { updateLOD(); scheduleCards(); updateTimeAxis(); });
-    sigma.on("afterRender", () => { scheduleCards(); updateTimeAxis(); });
+    sigma.getCamera().on("updated", () => { updateLOD(); scheduleCards(); updateTimeAxis(); updateAxesDecor(); });
+    sigma.on("afterRender", () => { scheduleCards(); updateTimeAxis(); updateAxesDecor(); });
 
     setupDrag();
   }
@@ -155,6 +159,7 @@
     computePivotCutoff();
 
     temporalMode = (opts.layoutKind === "temporal");
+    axesMode = (opts.layoutKind === "axes");
     tYearMin = opts.yearMin; tYearMax = opts.yearMax;
 
     if (opts.relayout) {
@@ -169,6 +174,7 @@
     sigma.refresh();
     scheduleCards();
     updateTimeAxis();
+    updateAxesDecor();
     if (statusEl) statusEl.textContent =
       `${graph.order} nœuds · ${graph.size} liens`;
   }
@@ -261,31 +267,42 @@
   function axesLayout(specX, specY, data) {
     if (graph.order === 0) return;
     ensureStruct();
-    const cx = axisCoords(specX || { kind: "free" }, data || {}, "x", AXIS_X);
-    const cy = axisCoords(specY || { kind: "free" }, data || {}, "y", AXIS_Y);
+    const rx = axisCoords(specX || { kind: "free" }, data || {}, "x", AXIS_X);
+    const ry = axisCoords(specY || { kind: "free" }, data || {}, "y", AXIS_Y);
     graph.forEachNode((id) => {
-      graph.setNodeAttribute(id, "x", cx[id]);
-      graph.setNodeAttribute(id, "y", cy[id]);
+      graph.setNodeAttribute(id, "x", rx.coords[id]);
+      graph.setNodeAttribute(id, "y", ry.coords[id]);
     });
+    axisMetaX = rx.meta; axisMetaY = ry.meta;   // pour dessiner les graduations
   }
 
+  function axisLabel(spec) {
+    if (!spec || spec.kind === "free") return "";
+    if (spec.kind === "time") return "Temps";
+    if (spec.kind === "centrality") return "Centralité";
+    return spec.dim || "";
+  }
+
+  // Renvoie { coords:{id:pos}, meta } pour un axe. meta décrit les graduations :
+  //   {type:"free"} | {type:"numeric", lo, rng, span, label} | {type:"categorical", cats, label}
   function axisCoords(spec, data, which, span) {
-    const out = {};
+    const coords = {};
     const gutter = -span / 2 - span * 0.08;     // nœuds sans valeur : rejetés sur le bord
     // Dégradation gracieuse : un axe-attribut sans données (ex. /axes indisponible)
     // retombe sur l'axe libre plutôt que d'effondrer tous les nœuds dans la gouttière.
     if (spec.kind === "attr" && (!data[spec.dim] || !Object.keys(data[spec.dim]).length)) {
       spec = { kind: "free" };
     }
+    const label = axisLabel(spec);
     // 1) Axe libre / force : on réutilise la coordonnée de la disposition force.
     if (spec.kind === "free") {
       const ext = structExtent(which);
       graph.forEachNode((id) => {
         const p = structPos[id];
         const v = p ? p[which] : 0;
-        out[id] = ((v - ext.lo) / ext.span - 0.5) * span;
+        coords[id] = ((v - ext.lo) / ext.span - 0.5) * span;
       });
-      return out;
+      return { coords, meta: { type: "free", label } };
     }
     // 2) Axe numérique continu : temps (mean_year), centralité (taille), ou attribut.
     if (spec.kind === "time" || spec.kind === "centrality" ||
@@ -300,12 +317,13 @@
         const v = valOf(id, a);
         if (v != null && isFinite(v)) { raw[id] = v; lo = Math.min(lo, v); hi = Math.max(hi, v); }
       });
+      if (!isFinite(lo)) { lo = 0; hi = 1; }
       const rng = (hi - lo) || 1;
       graph.forEachNode((id) => {
         const v = raw[id];
-        out[id] = (v == null) ? gutter : ((v - lo) / rng - 0.5) * span;
+        coords[id] = (v == null) ? gutter : ((v - lo) / rng - 0.5) * span;
       });
-      return out;
+      return { coords, meta: { type: "numeric", lo, rng, span, label } };
     }
     // 3) Axe catégoriel : colonnes ordonnées + jitter déterministe (étale chaque
     //    colonne selon la position force, pour éviter l'empilement des nœuds).
@@ -322,14 +340,63 @@
     const ext = structExtent(which);
     graph.forEachNode((id) => {
       const v = m[id];
-      if (v == null) { out[id] = gutter; return; }
+      if (v == null) { coords[id] = gutter; return; }
       const base = (idx[v] + 0.5) * step - span / 2;
       const p = structPos[id];
       const norm = p ? (((p[which] - ext.lo) / ext.span) * 2 - 1) : 0;
-      out[id] = base + bandHalf * norm;
+      coords[id] = base + bandHalf * norm;
     });
+    const catMeta = cats.map((c, i) => ({ name: c, coord: (i + 0.5) * step - span / 2 }));
+    return { coords, meta: { type: "categorical", cats: catMeta, label } };
+  }
+
+  // Graduations des axes (DOM superposé), réactualisées au zoom/pan comme l'axe temps.
+  function updateAxesDecor() {
+    if (!axisDecorXEl || !axisDecorYEl) return;
+    if (!axesMode) {
+      axisDecorXEl.classList.add("hidden"); axisDecorXEl.innerHTML = "";
+      axisDecorYEl.classList.add("hidden"); axisDecorYEl.innerHTML = "";
+      return;
+    }
+    drawAxisDecor(axisDecorXEl, axisMetaX, "x");
+    drawAxisDecor(axisDecorYEl, axisMetaY, "y");
+  }
+
+  function drawAxisDecor(elx, meta, which) {
+    if (!meta || meta.type === "free") { elx.classList.add("hidden"); elx.innerHTML = ""; return; }
+    elx.classList.remove("hidden");
+    const toVP = (c) => (which === "x") ? sigma.graphToViewport({ x: c, y: 0 })
+                                        : sigma.graphToViewport({ x: 0, y: c });
+    const place = (vp) => (which === "x") ? `left:${vp.x}px` : `top:${vp.y}px`;
+    let html = "";
+    if (meta.type === "numeric") {
+      niceTicks(meta.lo, meta.lo + meta.rng, 6).forEach((v) => {
+        const c = ((v - meta.lo) / meta.rng - 0.5) * meta.span;
+        html += `<span class="tick" style="${place(toVP(c))}">${formatTick(v)}</span>`;
+      });
+    } else {
+      meta.cats.forEach((c) => {
+        html += `<span class="tick" style="${place(toVP(c.coord))}">${escapeHtml(c.name)}</span>`;
+      });
+    }
+    if (meta.label) html += `<span class="axis-cap">${escapeHtml(meta.label)}</span>`;
+    elx.innerHTML = html;
+  }
+
+  // Graduations « rondes » entre lo et hi (≈ target ticks), pas de la forme 1/2/5·10ⁿ.
+  function niceTicks(lo, hi, target) {
+    const span = (hi - lo) || 1;
+    const raw = span / Math.max(1, target);
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const norm = raw / mag;
+    const step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
+    const out = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-6; v += step) {
+      out.push(Math.round(v * 1e6) / 1e6);
+    }
     return out;
   }
+  function formatTick(v) { return Number.isInteger(v) ? String(v) : String(+v.toFixed(2)); }
 
   function applyTemporalSizing() {
     let maxWC = 1;

@@ -272,6 +272,7 @@
       NetView.init({
         container: $("sigma"), cards: $("cards"), tooltip: $("tooltip"),
         statusEl: el["statusline"], timeAxis: el["time-axis"],
+        axisDecorX: $("axdec-x"), axisDecorY: $("axdec-y"),
         onSelect: selectNode, onBackground: deselect, onEdgeHover: edgeHover,
       });
       window.__netInit = true;

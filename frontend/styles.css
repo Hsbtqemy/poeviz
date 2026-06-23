@@ -226,6 +226,19 @@ button{font-family:inherit;cursor:pointer}
 .time-axis .tick::before{content:"";position:absolute;left:50%;bottom:13px;width:1px;height:7px;
   background:var(--line)}
 .time-axis .axis-line{position:absolute;left:0;right:0;bottom:17px;height:1px;background:var(--line)}
+/* axes porteurs de sens (disposition « axes ») : graduations X (bas) et Y (gauche) */
+.axis-decor{position:absolute;pointer-events:none;z-index:3;
+  font-family:system-ui,Arial,sans-serif;font-size:10px;color:var(--muted)}
+.axis-decor-x{left:0;right:0;bottom:0;height:22px}
+.axis-decor-x .tick{position:absolute;bottom:3px;transform:translateX(-50%);text-align:center;white-space:nowrap}
+.axis-decor-x .tick::before{content:"";position:absolute;left:50%;bottom:12px;width:1px;height:6px;background:var(--line)}
+.axis-decor-y{left:0;top:0;bottom:0;width:88px}
+.axis-decor-y .tick{position:absolute;left:6px;transform:translateY(-50%);white-space:nowrap;
+  max-width:80px;overflow:hidden;text-overflow:ellipsis}
+.axis-decor-y .tick::before{content:"";position:absolute;left:-5px;top:50%;width:6px;height:1px;background:var(--line)}
+.axis-decor .axis-cap{position:absolute;font-style:italic;font-weight:600;color:var(--ink)}
+.axis-decor-x .axis-cap{right:8px;bottom:6px}
+.axis-decor-y .axis-cap{left:6px;top:6px}
 
 /* tooltip */
 #tooltip{position:absolute;z-index:30;pointer-events:none;background:var(--ink);color:#fff;
