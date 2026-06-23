@@ -150,6 +150,12 @@ disponibles ([`node_detail`](../backend/graph.py)) ; `mean_year` + `work_count` 
 
 ## T2 — C : Axes porteurs de sens
 
+> **État : placement livré.** Disposition « Axes » + sélecteurs X/Y + ordre (alpha/fréquence),
+> placeur `axesLayout` (numérique → position, catégoriel → colonnes + jitter, libre → force),
+> consomme `/axes`, dégradation gracieuse si données absentes. **Reste** : étiquettes/ticks
+> d'axes sur le canvas (lisibilité « quelle colonne = quoi ») ; ordre « par année moyenne » et
+> « manuel » (seuls alpha/fréquence sont faits).
+
 **But.** Donner une **signification** aux coordonnées : `X` et/ou `Y` = un attribut au choix
 (ou le temps, ou la force). Généralise `temporalLayout` ([render.js:203-228](../frontend/render.js#L203-L228)).
 

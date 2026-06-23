@@ -21,6 +21,7 @@
     labels: "pivots",
     displayMode: "auto",
     layout: "force",
+    axisX: "free", axisY: "force", axisOrder: "alpha",   // disposition « axes »
     showHinge: false,
     yearMin: null, yearMax: null,
     fullYearMin: null, fullYearMax: null,
@@ -49,7 +50,7 @@
    "app", "brand-sub", "search", "pivot-list", "layers-list", "hinge-layer", "hinge-label", "reconfig",
    "adv", "adv-toggle", "seg-link", "seg-pivot", "seg-color", "seg-labels",
    "card-fields", "card-fields-ctrl", "card-fields-note",
-   "size-by", "layout-sel", "display-mode", "rail-foot",
+   "size-by", "layout-sel", "axes-ctrl", "axis-x", "axis-y", "seg-axis-order", "display-mode", "rail-foot",
    "yr-min", "yr-max", "yr-lo", "yr-hi", "yr-reset", "timewrap",
    "tl", "tl-hist", "tl-window", "tl-play", "tl-speed",
    "seg-timemode", "ctrl-window", "window-width", "window-width-val",
@@ -294,6 +295,7 @@
 
     buildPivotList();
     buildLayers();
+    buildAxisControls();
     buildCardFields();
     buildTimeline();
     toggleTemporalUI(State.fullYearMin != null);
@@ -359,6 +361,48 @@
     };
     el["pivot-list"].appendChild(mk("Aucun (force libre)", null));
     State.summary.node_layers.forEach((t) => el["pivot-list"].appendChild(mk(t, t)));
+  }
+
+  // Disposition « axes » : peuple les sélecteurs X/Y depuis les colonnes activables.
+  // X : libre / temps / attribut ; Y : force / centralité / attribut. La colonne
+  // temporelle reste accessible aussi via l'option dédiée « Temps ».
+  function buildAxisControls() {
+    const dims = (State.summary.layer_cols || []).filter((c) => c.activable);
+    const fill = (sel, head) => {
+      sel.innerHTML = "";
+      head.forEach(([v, lbl]) => sel.add(new Option(lbl, v)));
+      dims.forEach((c) => sel.add(new Option(c.col + (c.kind === "numeric" ? " (num.)" : ""), c.col)));
+    };
+    fill(el["axis-x"], [["free", "Libre (force)"], ["time", "Temps"]]);
+    fill(el["axis-y"], [["force", "Force"], ["centrality", "Centralité"]]);
+    // Restaure la sélection si elle existe encore, sinon retombe sur le défaut.
+    el["axis-x"].value = State.axisX;
+    if (!el["axis-x"].value) { State.axisX = "free"; el["axis-x"].value = "free"; }
+    el["axis-y"].value = State.axisY;
+    if (!el["axis-y"].value) { State.axisY = "force"; el["axis-y"].value = "force"; }
+    el["axes-ctrl"].style.display = (State.layout === "axes") ? "" : "none";
+  }
+
+  // Traduit un choix d'axe (chaîne) en spécification pour le placeur de render.js.
+  function axisSpec(val, axis) {
+    if (val === "free" || (axis === "y" && val === "force")) return { kind: "free" };
+    if (val === "time") return { kind: "time" };
+    if (val === "centrality") return { kind: "centrality" };
+    const L = (State.summary.layer_cols || []).find((c) => c.col === val);
+    return { kind: "attr", dim: val, dimKind: L ? L.kind : "categorical", order: State.axisOrder };
+  }
+
+  // Récupère les agrégats /axes pour les seuls axes de type attribut (les autres —
+  // libre, temps, centralité — se calculent côté rendu depuis les données du nœud).
+  async function fetchAxisData(specX, specY) {
+    const dims = [...new Set([specX, specY].filter((s) => s.kind === "attr").map((s) => s.dim))];
+    if (!dims.length) return {};
+    const p = new URLSearchParams({ session_id: State.sessionId, dims: dims.join(",") });
+    if (State.yearMin != null) { p.set("year_min", State.yearMin); p.set("year_max", State.yearMax); }
+    try {
+      const r = await getJSON("/axes?" + p.toString());
+      return r.values || {};
+    } catch (e) { flash("Erreur axes : " + e.message); return {}; }
   }
 
   function setPivot(value) {
@@ -597,7 +641,14 @@
     wireSeg(el["seg-labels"], (v) => { State.labels = v; NetView.setLabelsDensity(v); });
     wireSeg(el["display-mode"], (v) => { State.displayMode = v; NetView.setDisplayMode(v); });
     el["size-by"].addEventListener("change", (e) => { State.sizeBy = e.target.value; refreshGraph(); });
-    el["layout-sel"].addEventListener("change", (e) => { State.layout = e.target.value; State.layoutSig = null; refreshGraph(); });
+    el["layout-sel"].addEventListener("change", (e) => {
+      State.layout = e.target.value; State.layoutSig = null;
+      el["axes-ctrl"].style.display = (State.layout === "axes") ? "" : "none";
+      refreshGraph();
+    });
+    el["axis-x"].addEventListener("change", (e) => { State.axisX = e.target.value; State.layoutSig = null; refreshGraph(); });
+    el["axis-y"].addEventListener("change", (e) => { State.axisY = e.target.value; State.layoutSig = null; refreshGraph(); });
+    wireSeg(el["seg-axis-order"], (v) => { State.axisOrder = v; State.layoutSig = null; refreshGraph(); });
     el["search"].addEventListener("input", (e) => { State.search = e.target.value; NetView.applySearch(e.target.value); });
     el["dclose"].addEventListener("click", deselect);
     el["share-btn"].addEventListener("click", shareStub);
@@ -637,6 +688,7 @@
     return JSON.stringify({
       l: [...State.layersOn].sort(), link: State.linkMode, hinge: State.showHinge,
       lay: State.layout, piv: State.pivotMode === "reorganize" ? State.pivot : null,
+      ax: State.layout === "axes" ? [State.axisX, State.axisY, State.axisOrder] : null,
     });
   }
 
@@ -658,8 +710,17 @@
       State.lastGraph = data;
       const sig = layoutSignature();
       const relayout = sig !== State.layoutSig;
+      // Disposition « axes » : on résout les specs X/Y et, au relayout, on récupère
+      // les agrégats d'attribut nécessaires (brique T1, /axes).
+      let axisX = null, axisY = null, axisData = null;
+      if (State.layout === "axes") {
+        axisX = axisSpec(State.axisX, "x");
+        axisY = axisSpec(State.axisY, "y");
+        if (relayout) axisData = await fetchAxisData(axisX, axisY);
+      }
       NetView.render(data, {
         relayout, layoutKind: State.layout,
+        axisX, axisY, axisData,
         pivot: State.pivot, pivotMode: State.pivotMode,
         yearMin: State.fullYearMin, yearMax: State.fullYearMax,
       });

@@ -146,9 +146,20 @@
           <select id="layout-sel">
             <option value="force">Force (galaxie)</option>
             <option value="temporal">Temporel (axe = temps)</option>
+            <option value="axes">Axes (X / Y au choix)</option>
             <option value="circular">Circulaire</option>
             <option value="random">Dispersée</option>
           </select>
+        </div>
+        <div class="ctrl" id="axes-ctrl" style="display:none">
+          <label>Axe horizontal (X)</label>
+          <select id="axis-x"><option value="free">Libre (force)</option></select>
+          <label style="margin-top:6px">Axe vertical (Y)</label>
+          <select id="axis-y"><option value="force">Force</option></select>
+          <label style="margin-top:6px">Ordre des catégories</label>
+          <div class="seg" id="seg-axis-order">
+            <span data-v="alpha" class="on">alphabétique</span><span data-v="freq">fréquence</span>
+          </div>
         </div>
         <div class="ctrl">
           <label>Filtre temporel</label>

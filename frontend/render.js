@@ -159,7 +159,7 @@
 
     if (opts.relayout) {
       layout(opts.layoutKind || "force", opts);
-      if (opts.pivot && opts.pivotMode === "reorganize" && !temporalMode) centerPivot(opts.pivot);
+      if (opts.pivot && opts.pivotMode === "reorganize" && !temporalMode && opts.layoutKind !== "axes") centerPivot(opts.pivot);
       savePositions();
       sigma.getCamera().animatedReset();
     } else if (temporalMode) {
@@ -178,6 +178,10 @@
     if (graph.order === 0) return;
     if (kind === "temporal") {
       temporalLayout((opts && opts.yearMin), (opts && opts.yearMax));
+      return;
+    }
+    if (kind === "axes") {
+      axesLayout(opts && opts.axisX, opts && opts.axisY, opts && opts.axisData);
       return;
     }
     if (kind === "circular" && basicLayouts.circular) {
@@ -228,6 +232,104 @@
   }
 
   function hasStruct() { return Object.keys(structPos).length > 0; }
+
+  // -------------------------------------------------------- disposition « axes »
+  // X et Y portent chacun un sens au choix : libre (force), temps, centralité, ou
+  // un attribut (numérique → position le long de l'axe ; catégoriel → colonnes
+  // ordonnées + léger jitter). La position d'un nœud devient une affirmation
+  // lisible (roadmap T2). Déterministe : on réutilise la disposition force comme
+  // base (pour les axes libres et le jitter), donc cohérent écran ↔ export.
+  const AXIS_X = 1200, AXIS_Y = 760;
+
+  function ensureStruct() {
+    if (hasStruct() || !FA2) return;
+    const s = FA2.inferSettings ? FA2.inferSettings(graph) : {};
+    FA2.assign(graph, { iterations: 200, settings: s });
+    graph.forEachNode((id, a) => { structPos[id] = { x: a.x, y: a.y }; });
+  }
+
+  function structExtent(which) {
+    let lo = Infinity, hi = -Infinity;
+    graph.forEachNode((id) => {
+      const p = structPos[id];
+      if (p) { lo = Math.min(lo, p[which]); hi = Math.max(hi, p[which]); }
+    });
+    if (!isFinite(lo)) { lo = -1; hi = 1; }
+    return { lo, hi, span: (hi - lo) || 1 };
+  }
+
+  function axesLayout(specX, specY, data) {
+    if (graph.order === 0) return;
+    ensureStruct();
+    const cx = axisCoords(specX || { kind: "free" }, data || {}, "x", AXIS_X);
+    const cy = axisCoords(specY || { kind: "free" }, data || {}, "y", AXIS_Y);
+    graph.forEachNode((id) => {
+      graph.setNodeAttribute(id, "x", cx[id]);
+      graph.setNodeAttribute(id, "y", cy[id]);
+    });
+  }
+
+  function axisCoords(spec, data, which, span) {
+    const out = {};
+    const gutter = -span / 2 - span * 0.08;     // nœuds sans valeur : rejetés sur le bord
+    // Dégradation gracieuse : un axe-attribut sans données (ex. /axes indisponible)
+    // retombe sur l'axe libre plutôt que d'effondrer tous les nœuds dans la gouttière.
+    if (spec.kind === "attr" && (!data[spec.dim] || !Object.keys(data[spec.dim]).length)) {
+      spec = { kind: "free" };
+    }
+    // 1) Axe libre / force : on réutilise la coordonnée de la disposition force.
+    if (spec.kind === "free") {
+      const ext = structExtent(which);
+      graph.forEachNode((id) => {
+        const p = structPos[id];
+        const v = p ? p[which] : 0;
+        out[id] = ((v - ext.lo) / ext.span - 0.5) * span;
+      });
+      return out;
+    }
+    // 2) Axe numérique continu : temps (mean_year), centralité (taille), ou attribut.
+    if (spec.kind === "time" || spec.kind === "centrality" ||
+        (spec.kind === "attr" && spec.dimKind === "numeric")) {
+      const valOf = (id, a) => {
+        if (spec.kind === "time") return a.mean_year;
+        if (spec.kind === "centrality") return a.baseSize;
+        const m = data[spec.dim]; return m ? m[id] : undefined;
+      };
+      let lo = Infinity, hi = -Infinity; const raw = {};
+      graph.forEachNode((id, a) => {
+        const v = valOf(id, a);
+        if (v != null && isFinite(v)) { raw[id] = v; lo = Math.min(lo, v); hi = Math.max(hi, v); }
+      });
+      const rng = (hi - lo) || 1;
+      graph.forEachNode((id) => {
+        const v = raw[id];
+        out[id] = (v == null) ? gutter : ((v - lo) / rng - 0.5) * span;
+      });
+      return out;
+    }
+    // 3) Axe catégoriel : colonnes ordonnées + jitter déterministe (étale chaque
+    //    colonne selon la position force, pour éviter l'empilement des nœuds).
+    const m = data[spec.dim] || {};
+    const counts = {};
+    graph.forEachNode((id) => { const v = m[id]; if (v != null) counts[v] = (counts[v] || 0) + 1; });
+    let cats = Object.keys(counts);
+    if (spec.order === "freq") cats.sort((a, b) => counts[b] - counts[a] || a.localeCompare(b));
+    else cats.sort((a, b) => a.localeCompare(b));
+    const idx = {}; cats.forEach((c, i) => { idx[c] = i; });
+    const K = Math.max(1, cats.length);
+    const step = span / K;
+    const bandHalf = step * 0.34;
+    const ext = structExtent(which);
+    graph.forEachNode((id) => {
+      const v = m[id];
+      if (v == null) { out[id] = gutter; return; }
+      const base = (idx[v] + 0.5) * step - span / 2;
+      const p = structPos[id];
+      const norm = p ? (((p[which] - ext.lo) / ext.span) * 2 - 1) : 0;
+      out[id] = base + bandHalf * norm;
+    });
+    return out;
+  }
 
   function applyTemporalSizing() {
     let maxWC = 1;
