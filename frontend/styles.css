@@ -91,7 +91,7 @@ button{font-family:inherit;cursor:pointer}
 .modal-actions{margin-top:18px;display:flex;justify-content:space-between;align-items:center;gap:10px}
 
 /* --------------------------------------------------------------- App 3 zones */
-.app{display:flex;height:100vh}
+.app{display:flex;height:100vh;position:relative}
 .rail{width:var(--rail-w);flex:none;background:var(--panel);border-right:1px solid var(--line);
   padding:18px 18px;display:flex;flex-direction:column;gap:18px;overflow-y:auto}
 .brand{font-size:15px;font-weight:bold;display:flex;align-items:center;gap:9px}
@@ -262,11 +262,13 @@ button{font-family:inherit;cursor:pointer}
   cursor:pointer;line-height:1;opacity:.6}
 .ncard.pinned .pin-btn{opacity:1;color:var(--sel)}
 
-/* detail panel */
-.detail{width:var(--detail-w);flex:none;background:var(--panel);border-left:1px solid var(--line);
-  overflow-y:auto;transform:translateX(100%);transition:transform .22s ease;position:relative}
+/* detail panel — superposé (overlay) : ne réserve PAS de largeur quand il est
+   fermé, sinon le canvas serait rétréci en permanence (bande morte à droite).
+   Il glisse par-dessus le bord droit du canvas à l'ouverture. */
+.detail{position:absolute;right:0;top:0;bottom:0;width:var(--detail-w);z-index:20;
+  background:var(--panel);border-left:1px solid var(--line);box-shadow:-4px 0 16px rgba(0,0,0,.06);
+  overflow-y:auto;transform:translateX(100%);transition:transform .22s ease}
 .detail.open{transform:translateX(0)}
-.app.has-detail{}
 .dhead{color:#fff;padding:18px 20px;position:relative}
 .dhead h2{font-size:19px;line-height:1.15}
 .dhead p{font-size:11.5px;opacity:.9;font-style:italic;margin-top:3px;font-family:system-ui,Arial,sans-serif}
@@ -320,5 +322,3 @@ button{font-family:inherit;cursor:pointer}
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--line);
   border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}
 @keyframes spin{to{transform:rotate(360deg)}}
-
-@media(max-width:980px){ .detail{position:absolute;right:0;top:0;bottom:0;z-index:20} }
