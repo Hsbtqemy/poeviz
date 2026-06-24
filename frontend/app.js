@@ -278,7 +278,7 @@
         container: $("sigma"), cards: $("cards"), tooltip: $("tooltip"),
         statusEl: el["statusline"], timeAxis: el["time-axis"],
         axisDecorX: $("axdec-x"), axisDecorY: $("axdec-y"),
-        onSelect: selectNode, onBackground: deselect, onEdgeHover: edgeHover,
+        onSelect: selectNode, onBackground: deselect, onEdgeHover: edgeHover, onEdgeClick: selectEdge,
       });
       window.__netInit = true;
       window.addEventListener("resize", () => {
@@ -858,6 +858,40 @@
     State.selected = null;
     NetView.setHighlight(null);
     el["detail"].classList.remove("open");
+  }
+
+  // Clic sur une arête → volet « pourquoi ce lien » (ouvrages communs + intermédiaires
+  // partagés), persistant, en plus de l'info-bulle de survol. On isole la paire.
+  async function selectEdge(s, t) {
+    State.selected = null;                 // sélection d'arête, pas de nœud
+    NetView.setFocus([s, t]);
+    NetView.centerOnNodes([s, t]);
+    try {
+      let url = `/edge?session_id=${State.sessionId}&source=${encodeURIComponent(s)}&target=${encodeURIComponent(t)}`;
+      if (State.yearMin != null) url += `&year_min=${State.yearMin}&year_max=${State.yearMax}`;
+      renderEdgeDetail(await getJSON(url));
+    } catch (e) { flash("Détail du lien indisponible : " + e.message); }
+  }
+
+  function renderEdgeDetail(d) {
+    el["dhead"].style.background = "#B8453F";       // rouge sélection : c'est un lien
+    el["d-title"].textContent = `${d.source_label} ↔ ${d.target_label}`;
+    el["d-sub"].textContent = "Pourquoi ce lien";
+    let html = "";
+    const works = d.shared_works || [];
+    const via = Object.entries(d.shared_via || {});
+    if (works.length) {
+      html += `<div class="k" style="font-size:9.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-weight:bold;margin:2px 0 8px">${esc(cap(unitP()))} en commun</div>`;
+      works.forEach((w) => {
+        html += `<div class="work"><div class="t">${esc(w.label)}</div><div class="s">${w.year != null ? w.year : ""}</div></div>`;
+      });
+    }
+    via.forEach(([type, arr]) => {
+      html += `<div class="stat"><div class="k">via ${esc(type)}</div><div class="v">${arr.slice(0, 12).map((x) => `<span class="dtag">${esc(x)}</span>`).join("")}</div></div>`;
+    });
+    if (!works.length && !via.length) html += stat("Lien", "indirect (plusieurs intermédiaires)");
+    el["dbody"].innerHTML = html;
+    el["detail"].classList.add("open");
   }
 
   // Survol d'une arête → on demande au backend POURQUOI les deux nœuds sont reliés

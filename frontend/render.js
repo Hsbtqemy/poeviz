@@ -76,6 +76,9 @@
     });
 
     sigma.on("clickNode", (e) => callbacks.onSelect && callbacks.onSelect(e.node));
+    sigma.on("clickEdge", (e) => {
+      if (callbacks.onEdgeClick && graph.hasEdge(e.edge)) callbacks.onEdgeClick(...graph.extremities(e.edge));
+    });
     sigma.on("clickStage", () => callbacks.onBackground && callbacks.onBackground());
     sigma.on("enterNode", (e) => showTooltip(e.node));
     sigma.on("leaveNode", hideTooltip);
