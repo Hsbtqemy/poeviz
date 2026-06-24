@@ -23,7 +23,7 @@
     layout: "force",
     axisX: "free", axisY: "force", axisOrder: "alpha",   // disposition « axes »
     force: { linLog: false, outbound: false, edgeWeight: 1, groupByCommunity: false },
-    simAttract: false, simDims: [],   // similarité (T4) : rapprocher les nœuds semblables
+    simAttract: false, simDims: [], simThreshold: 0.5,   // similarité (T4) : rapprocher les semblables
     showHinge: false,
     yearMin: null, yearMax: null,
     fullYearMin: null, fullYearMax: null,
@@ -54,7 +54,7 @@
    "card-fields", "card-fields-ctrl", "card-fields-note",
    "size-by", "layout-sel", "axes-ctrl", "axis-x", "axis-y", "seg-axis-order",
    "force-ctrl", "force-linlog", "force-outbound", "force-community", "force-weight", "force-weight-val",
-   "sim-ctrl", "sim-attract", "sim-dims",
+   "sim-ctrl", "sim-attract", "sim-opts", "sim-dims", "sim-threshold", "sim-threshold-val",
    "display-mode", "rail-foot",
    "yr-min", "yr-max", "yr-lo", "yr-hi", "yr-reset", "timewrap",
    "tl", "tl-hist", "tl-window", "tl-play", "tl-speed",
@@ -429,14 +429,15 @@
       });
       el["sim-dims"].appendChild(lab);
     });
-    el["sim-dims"].style.display = State.simAttract ? "" : "none";
+    el["sim-opts"].style.display = State.simAttract ? "" : "none";
     el["sim-ctrl"].style.display = ["force", "temporal", "axes"].includes(State.layout) ? "" : "none";
   }
 
   // Récupère les arêtes latentes de similarité (vide si désactivé / aucun attribut).
   async function fetchSimilar() {
     if (!State.simAttract || !State.simDims.length) return [];
-    const p = new URLSearchParams({ session_id: State.sessionId, dims: State.simDims.join(",") });
+    const p = new URLSearchParams({ session_id: State.sessionId, dims: State.simDims.join(","),
+                                    threshold: State.simThreshold });
     if (State.yearMin != null) { p.set("year_min", State.yearMin); p.set("year_max", State.yearMax); }
     try {
       const r = await getJSON("/similar?" + p.toString());
@@ -710,8 +711,15 @@
     });
     el["sim-attract"].addEventListener("change", (e) => {
       State.simAttract = e.target.checked;
-      el["sim-dims"].style.display = State.simAttract ? "" : "none";
+      el["sim-opts"].style.display = State.simAttract ? "" : "none";
       State.layoutSig = null; refreshGraph();
+    });
+    // Seuil : libellé en direct (input), relayout au relâcher (change) — comme l'influence.
+    el["sim-threshold"].addEventListener("input", (e) => {
+      el["sim-threshold-val"].textContent = (+e.target.value).toFixed(2);
+    });
+    el["sim-threshold"].addEventListener("change", (e) => {
+      State.simThreshold = +e.target.value; State.layoutSig = null; refreshGraph();
     });
     el["search"].addEventListener("input", (e) => { State.search = e.target.value; NetView.applySearch(e.target.value); });
     el["dclose"].addEventListener("click", deselect);
@@ -754,7 +762,7 @@
       lay: State.layout, piv: State.pivotMode === "reorganize" ? State.pivot : null,
       ax: State.layout === "axes" ? [State.axisX, State.axisY, State.axisOrder] : null,
       f: State.force,
-      sim: State.simAttract ? State.simDims.slice().sort() : null,
+      sim: State.simAttract ? { t: State.simThreshold, d: State.simDims.slice().sort() } : null,
     });
   }
 
