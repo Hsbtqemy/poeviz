@@ -255,6 +255,14 @@ par communauté. Reste émergent et déterministe.
 
 ## T5 — B-pur : Placement par réduction de dimension (MDS)
 
+> **État : livré.** Disposition « Similarité (MDS) » : `graph.mds_positions` (vecteurs d'attributs
+> catégoriels → distance euclidienne des profils L2-normalisés √(2−2·cos) → **MDS classique**,
+> décomposition propre **numpy**, aucune dépendance nouvelle) + endpoint `/mds`. Embarque les
+> entités des types visibles ; signes fixés → **déterministe**. Front : option de disposition
+> dédiée (découplée des réglages de force / attraction). **Reste (mineur)** : sélection des
+> attributs du MDS (utilise toutes les catégorielles) ; UMAP/t-SNE explicitement hors-scope ;
+> avertissement UI « arêtes non structurantes en MDS-pur ».
+
 **But.** Une vraie « carte de similarité » : distance à l'écran ≈ dissimilarité d'attributs.
 Le plus riche, le plus risqué.
 

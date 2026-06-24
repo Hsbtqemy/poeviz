@@ -186,6 +186,15 @@ def test_similar_empty_dims():
     assert r["edges"] == []
 
 
+def test_mds_endpoint():
+    sid = configured_demo()
+    r = client.get("/mds", params={"session_id": sid, "layers": "Auteur"}).json()
+    assert "positions" in r and r["positions"]          # dims vide → toutes catégorielles
+    nid, xy = next(iter(r["positions"].items()))
+    assert nid.startswith("Auteur::") and len(xy) == 2
+    assert all(isinstance(c, (int, float)) for c in xy)
+
+
 def test_axes_inert_by_default():
     """La brique est inerte : /graph ne porte aucun agrégat (vue par défaut intacte)."""
     sid = configured_demo()

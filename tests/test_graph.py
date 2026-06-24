@@ -284,6 +284,35 @@ def test_similarity_empty_without_dims():
     assert graph.similarity_edges(G, meta, graph.ProjectionParams(), []) == []
 
 
+def _dist(p, q):
+    return ((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2) ** 0.5
+
+
+def test_mds_places_similar_nodes_closer():
+    """T5 : dans l'embedding MDS, deux auteurs au même profil de genre sont plus
+    proches qu'un auteur au profil différent. Déterministe (mêmes coords à 2 appels)."""
+    df = pd.DataFrame({
+        "Titre": ["T1", "T2", "T3", "T4"],
+        "Auteur": ["A", "B", "C", "D"],
+        "Genre": ["Roman", "Roman", "Essai", "Essai"],
+    })
+    roles = {"Titre": "edge", "Auteur": "node", "Genre": "attribute"}
+    G, meta = graph.build_master_graph(df, roles, SEP)
+    pos = graph.mds_positions(G, meta, graph.ProjectionParams(), ["Genre"])
+    assert {"Auteur::A", "Auteur::B", "Auteur::C", "Auteur::D"} <= set(pos)
+    assert _dist(pos["Auteur::A"], pos["Auteur::B"]) < _dist(pos["Auteur::A"], pos["Auteur::C"])
+    # déterminisme : un second calcul donne exactement les mêmes positions
+    pos2 = graph.mds_positions(G, meta, graph.ProjectionParams(), ["Genre"])
+    assert pos == pos2
+
+
+def test_mds_empty_when_too_few_nodes():
+    df = pd.DataFrame({"Titre": ["T1", "T2"], "Auteur": ["A", "B"], "Genre": ["Roman", "Essai"]})
+    roles = {"Titre": "edge", "Auteur": "node", "Genre": "attribute"}
+    G, meta = graph.build_master_graph(df, roles, SEP)
+    assert graph.mds_positions(G, meta, graph.ProjectionParams(), ["Genre"]) == {}  # < 3 nœuds
+
+
 def test_axis_values_dominant_is_deterministic():
     """Ex æquo départagé par ordre alphabétique → résultat stable."""
     df = pd.DataFrame({

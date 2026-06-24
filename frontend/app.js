@@ -445,6 +445,17 @@
     } catch (e) { flash("Erreur similarité : " + e.message); return []; }
   }
 
+  // Positions de la disposition « similarité (MDS) » : embedding par dissimilarité
+  // d'attributs (toutes colonnes catégorielles), pour les types actuellement affichés.
+  async function fetchMds() {
+    const p = new URLSearchParams({ session_id: State.sessionId, layers: [...State.layersOn].join(",") });
+    if (State.yearMin != null) { p.set("year_min", State.yearMin); p.set("year_max", State.yearMax); }
+    try {
+      const r = await getJSON("/mds?" + p.toString());
+      return r.positions || {};
+    } catch (e) { flash("Erreur MDS : " + e.message); return {}; }
+  }
+
   function setPivot(value) {
     State.pivot = value;
     el["pivot-list"].querySelectorAll("button").forEach((b, i) => {
@@ -794,9 +805,11 @@
       }
       // Similarité (T4) : arêtes latentes récupérées au relayout, injectées dans FA2.
       const latentEdges = (relayout && State.simAttract) ? await fetchSimilar() : null;
+      // Similarité MDS (T5) : positions de l'embedding récupérées au relayout.
+      const mdsPositions = (relayout && State.layout === "mds") ? await fetchMds() : null;
       NetView.render(data, {
         relayout, layoutKind: State.layout,
-        axisX, axisY, axisData, force: State.force, latentEdges,
+        axisX, axisY, axisData, force: State.force, latentEdges, mdsPositions,
         pivot: State.pivot, pivotMode: State.pivotMode,
         yearMin: State.fullYearMin, yearMax: State.fullYearMax,
       });

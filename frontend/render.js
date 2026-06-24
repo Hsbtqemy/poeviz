@@ -170,7 +170,10 @@
 
     if (opts.relayout) {
       layout(opts.layoutKind || "force", opts);
-      if (opts.pivot && opts.pivotMode === "reorganize" && !temporalMode && opts.layoutKind !== "axes") centerPivot(opts.pivot);
+      // Dispositions à coordonnées porteuses de sens (temps / axes / MDS) : ne PAS
+      // recentrer sur le pivot, cela fausserait l'axe ou la carte.
+      const meaningfulCoords = temporalMode || opts.layoutKind === "axes" || opts.layoutKind === "mds";
+      if (opts.pivot && opts.pivotMode === "reorganize" && !meaningfulCoords) centerPivot(opts.pivot);
       savePositions();
       sigma.getCamera().animatedReset();
     } else if (temporalMode) {
@@ -194,6 +197,10 @@
     }
     if (kind === "axes") {
       axesLayout(opts && opts.axisX, opts && opts.axisY, opts && opts.axisData);
+      return;
+    }
+    if (kind === "mds") {
+      mdsLayout(opts && opts.mdsPositions);
       return;
     }
     if (kind === "circular" && basicLayouts.circular) {
@@ -340,6 +347,25 @@
       graph.setNodeAttribute(id, "y", ry.coords[id]);
     });
     axisMetaX = rx.meta; axisMetaY = ry.meta;   // pour dessiner les graduations
+  }
+
+  // Disposition « similarité (MDS) » : positions calculées côté serveur (embedding où
+  // la distance ≈ dissimilarité d'attributs). Les nœuds sans position (pas de profil,
+  // ou type non embarqué) sont empilés dans une gouttière pour ne pas s'amasser en un point.
+  function mdsLayout(positions) {
+    positions = positions || {};
+    let gy = -560;
+    graph.forEachNode((id) => {
+      const p = positions[id];
+      if (p) {
+        graph.setNodeAttribute(id, "x", p[0]);
+        graph.setNodeAttribute(id, "y", p[1]);
+      } else {
+        graph.setNodeAttribute(id, "x", -720);
+        graph.setNodeAttribute(id, "y", gy);
+        gy += 22;
+      }
+    });
   }
 
   function axisLabel(spec) {

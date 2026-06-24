@@ -104,7 +104,7 @@ taille d'upload limitée, métriques mises en cache par vue.
 | **Liens d'une couche masquée** | *se reportent* (projection : on relie les voisins entre eux) ou *se coupent* |
 | **Couleur des nœuds** | par **type** d'entité, par **communauté** (Louvain), ou par **époque** (année moyenne d'activité → dégradé, avec légende) |
 | **Taille des nœuds** | par centralité : degré, intermédiarité, vecteur propre |
-| **Disposition** | force (galaxie), **temporel** (axe horizontal = temps), **axes** (X *et* Y au choix : libre/force, temps, centralité, ou un **attribut** — numérique → position, catégoriel → colonnes ordonnées), circulaire, dispersée |
+| **Disposition** | force (galaxie), **temporel** (axe horizontal = temps), **axes** (X *et* Y au choix : libre/force, temps, centralité, ou un **attribut** — numérique → position, catégoriel → colonnes ordonnées), **similarité (MDS)** (carte où la distance ≈ dissimilarité d'attributs, par réduction de dimension), circulaire, dispersée |
 | **Réglages de force** | resserrer les groupes (LinLog), écarter les pôles (hubs), influence des liens partagés (poids des ouvrages communs), regrouper par **communauté** (semis par cluster Louvain) |
 | **Similarité** | *rapprocher les nœuds semblables* : relie en coulisses (sans l'afficher) les entités d'un même type aux **profils d'attributs proches** (genre, langue, lieu…) — les attributs pris en compte sont réglables |
 | **Densité des étiquettes** | toutes / pivots / aucune |

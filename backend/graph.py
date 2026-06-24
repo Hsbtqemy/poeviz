@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable
 
 import networkx as nx
+import numpy as np
 
 from .ingest import (ROLE_NODE, ROLE_EDGE, ROLE_ATTRIBUTE, ROLE_IGNORE, split_cell,
                      parse_year, _normalize_scalar, _is_blank, _is_number)
@@ -777,6 +778,81 @@ def similarity_edges(G: nx.Graph, meta: MasterMeta, params: ProjectionParams,
             key = (node, other) if node < other else (other, node)
             edges[key] = round(sim, 3)
     return [{"source": a, "target": b, "weight": w} for (a, b), w in edges.items()]
+
+
+def _classical_mds(D: "np.ndarray", ndim: int = 2) -> "np.ndarray":
+    """MDS classique (Torgerson) : double-centrage de -½D², décomposition propre,
+    coordonnées = vecteurs propres dominants × √(valeurs propres positives)."""
+    n = D.shape[0]
+    D2 = D ** 2
+    J = np.eye(n) - np.ones((n, n)) / n
+    B = -0.5 * (J @ D2 @ J)
+    w, V = np.linalg.eigh(B)                      # valeurs propres croissantes
+    order = np.argsort(w)[::-1][:ndim]
+    L = np.maximum(w[order], 0.0)
+    return V[:, order] * np.sqrt(L)
+
+
+def mds_positions(G: nx.Graph, meta: MasterMeta, params: ProjectionParams,
+                  dims: Iterable[str]) -> dict[str, list[float]]:
+    """Disposition « par similarité » (T5) : embedding 2D où la **distance à l'écran
+    ≈ la dissimilarité d'attributs** (cosinus). MDS classique (décomposition propre,
+    numpy — aucune dépendance nouvelle). `dims` vide → toutes les colonnes
+    catégorielles activables. On n'embarque que les entités des types visibles ayant
+    au moins un ouvrage actif. Déterministe (signes fixés). Renvoie `{id: [x, y]}`."""
+    kind_of = {e["col"]: e.get("kind", "categorical") for e in meta.layer_cols}
+    dim_list = [str(d) for d in dims if d]
+    if not dim_list:
+        dim_list = [e["col"] for e in meta.layer_cols
+                    if e.get("activable") and e.get("kind") != "numeric"]
+    cat_dims = [d for d in dim_list if kind_of.get(d, "categorical") != "numeric"]
+    if not cat_dims:
+        return {}
+
+    visible_types = set(params.layers) if params.layers is not None else set(meta.node_cols)
+    active = _active_works(G, params)
+    nodes: list[str] = []
+    feats: list[dict[str, int]] = []
+    for n, d in G.nodes(data=True):
+        if d.get("kind") != "entity" or d.get("type") not in visible_types:
+            continue
+        works = [w for w in G.neighbors(n) if w in active]
+        if not works:
+            continue
+        f: dict[str, int] = {}
+        for dim in cat_dims:
+            for w in works:
+                for v in _work_dim_values(G, w, dim, meta):
+                    key = f"{dim}::{v}"
+                    f[key] = f.get(key, 0) + 1
+        if f:
+            nodes.append(n)
+            feats.append(f)
+    if len(nodes) < 3:                            # trop peu pour un embedding utile
+        return {}
+
+    vocab = sorted({k for f in feats for k in f})
+    vi = {k: i for i, k in enumerate(vocab)}
+    M = np.zeros((len(nodes), len(vocab)))
+    for r, f in enumerate(feats):
+        for k, c in f.items():
+            M[r, vi[k]] = c
+    norms = np.linalg.norm(M, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    Mn = M / norms
+    sim = np.clip(Mn @ Mn.T, -1.0, 1.0)
+    # distance euclidienne des vecteurs L2-normalisés = √(2−2·cos) → MDS exact.
+    D = np.sqrt(np.maximum(2.0 - 2.0 * sim, 0.0))
+    coords = _classical_mds(D)
+
+    mx = float(np.max(np.abs(coords))) or 1.0
+    coords = coords / mx * 500.0                  # échelle d'affichage
+    for k in range(coords.shape[1]):              # signes déterministes
+        col = coords[:, k]
+        if col[int(np.argmax(np.abs(col)))] < 0:
+            coords[:, k] = -col
+    return {nodes[i]: [round(float(coords[i, 0]), 2), round(float(coords[i, 1]), 2)]
+            for i in range(len(nodes))}
 
 
 def node_detail(G: nx.Graph, meta: MasterMeta, node_id: str,

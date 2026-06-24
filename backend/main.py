@@ -556,6 +556,26 @@ def get_similar(
     return {"edges": edges}
 
 
+@app.get("/mds")
+def get_mds(
+    session_id: str,
+    dims: str | None = None,
+    layers: str | None = None,
+    year_min: int | None = None,
+    year_max: int | None = None,
+) -> dict[str, Any]:
+    """Positions de la disposition « similarité (MDS) » (T5) : embedding 2D où la
+    distance ≈ dissimilarité d'attributs. `layers` = types d'entités à embarquer
+    (visibles) ; `dims` vide → toutes les colonnes catégorielles. `{positions:{id:[x,y]}}`."""
+    session = get_session(session_id)
+    require_master(session)
+    dim_list = [x for x in (dims or "").split(",") if x]
+    layer_list = [x for x in layers.split(",") if x] if layers is not None else None
+    params = graph.ProjectionParams(layers=layer_list, year_min=year_min, year_max=year_max)
+    positions = graph.mds_positions(session.master, session.meta, params, dim_list)
+    return {"positions": positions}
+
+
 @app.post("/export")
 def post_export(body: ExportBody):
     session = get_session(body.session_id)
