@@ -22,6 +22,7 @@
     displayMode: "auto",
     layout: "force",
     axisX: "free", axisY: "force", axisOrder: "alpha",   // disposition « axes »
+    force: { linLog: false, outbound: false, edgeWeight: 1, groupByCommunity: false },
     showHinge: false,
     yearMin: null, yearMax: null,
     fullYearMin: null, fullYearMax: null,
@@ -50,7 +51,9 @@
    "app", "brand-sub", "search", "pivot-list", "layers-list", "hinge-layer", "hinge-label", "reconfig",
    "adv", "adv-toggle", "seg-link", "seg-pivot", "seg-color", "seg-labels",
    "card-fields", "card-fields-ctrl", "card-fields-note",
-   "size-by", "layout-sel", "axes-ctrl", "axis-x", "axis-y", "seg-axis-order", "display-mode", "rail-foot",
+   "size-by", "layout-sel", "axes-ctrl", "axis-x", "axis-y", "seg-axis-order",
+   "force-ctrl", "force-linlog", "force-outbound", "force-community", "force-weight", "force-weight-val",
+   "display-mode", "rail-foot",
    "yr-min", "yr-max", "yr-lo", "yr-hi", "yr-reset", "timewrap",
    "tl", "tl-hist", "tl-window", "tl-play", "tl-speed",
    "seg-timemode", "ctrl-window", "window-width", "window-width-val",
@@ -645,11 +648,30 @@
     el["layout-sel"].addEventListener("change", (e) => {
       State.layout = e.target.value; State.layoutSig = null;
       el["axes-ctrl"].style.display = (State.layout === "axes") ? "" : "none";
+      // Les réglages de force ne concernent que les dispositions à base de force.
+      el["force-ctrl"].style.display =
+        ["force", "temporal", "axes"].includes(State.layout) ? "" : "none";
       refreshGraph();
     });
     el["axis-x"].addEventListener("change", (e) => { State.axisX = e.target.value; State.layoutSig = null; refreshGraph(); });
     el["axis-y"].addEventListener("change", (e) => { State.axisY = e.target.value; State.layoutSig = null; refreshGraph(); });
     wireSeg(el["seg-axis-order"], (v) => { State.axisOrder = v; State.layoutSig = null; refreshGraph(); });
+    // Réglages de force (T3) : chaque changement relance la disposition.
+    const forceToggle = (key, id) => el[id].addEventListener("change", (e) => {
+      State.force = { ...State.force, [key]: e.target.checked }; State.layoutSig = null; refreshGraph();
+    });
+    forceToggle("linLog", "force-linlog");
+    forceToggle("outbound", "force-outbound");
+    forceToggle("groupByCommunity", "force-community");
+    // input → maj du libellé seulement (léger) ; change (au relâcher) → relayout,
+    // pour éviter de relancer ForceAtlas2 à chaque cran pendant le glissement.
+    el["force-weight"].addEventListener("input", (e) => {
+      el["force-weight-val"].textContent = e.target.value;
+    });
+    el["force-weight"].addEventListener("change", (e) => {
+      State.force = { ...State.force, edgeWeight: +e.target.value };
+      State.layoutSig = null; refreshGraph();
+    });
     el["search"].addEventListener("input", (e) => { State.search = e.target.value; NetView.applySearch(e.target.value); });
     el["dclose"].addEventListener("click", deselect);
     el["share-btn"].addEventListener("click", shareStub);
@@ -690,6 +712,7 @@
       l: [...State.layersOn].sort(), link: State.linkMode, hinge: State.showHinge,
       lay: State.layout, piv: State.pivotMode === "reorganize" ? State.pivot : null,
       ax: State.layout === "axes" ? [State.axisX, State.axisY, State.axisOrder] : null,
+      f: State.force,
     });
   }
 
@@ -721,7 +744,7 @@
       }
       NetView.render(data, {
         relayout, layoutKind: State.layout,
-        axisX, axisY, axisData,
+        axisX, axisY, axisData, force: State.force,
         pivot: State.pivot, pivotMode: State.pivotMode,
         yearMin: State.fullYearMin, yearMax: State.fullYearMax,
       });

@@ -36,6 +36,8 @@
   let temporalMode = false, tYearMin = null, tYearMax = null;
   // mode « axes » (X/Y porteurs de sens) : métadonnées pour dessiner les graduations
   let axesMode = false, axisMetaX = null, axisMetaY = null;
+  // réglages de la force (ForceAtlas2), pilotés depuis les Options avancées
+  let forceSettings = { linLog: false, outbound: false, edgeWeight: 1, groupByCommunity: false };
 
   let focusSet = null;        // ids à garder en évidence (null = tout)
   let selected = null;        // nœud cliqué
@@ -160,6 +162,7 @@
 
     temporalMode = (opts.layoutKind === "temporal");
     axesMode = (opts.layoutKind === "axes");
+    if (opts.force) forceSettings = opts.force;     // réglages de force (T3)
     tYearMin = opts.yearMin; tYearMax = opts.yearMax;
 
     if (opts.relayout) {
@@ -195,16 +198,59 @@
     } else if (kind === "random" && basicLayouts.random) {
       basicLayouts.random.assign(graph, { scale: 20, center: 0 });
     } else if (FA2) {
-      const settings = FA2.inferSettings ? FA2.inferSettings(graph) : {};
-      settings.gravity = 1.2;
-      settings.scalingRatio = 12;
-      settings.barnesHutOptimize = graph.order > 300;
-      settings.adjustSizes = true;
-      FA2.assign(graph, { iterations: Math.min(420, 120 + graph.order * 3), settings });
+      runForce(Math.min(420, 120 + graph.order * 3));
     }
     // Mémorise cette disposition « structurelle » : le mode temporel réutilisera
     // son Y pour garder la MÊME carte, juste glissée sur l'axe du temps.
     graph.forEachNode((id, a) => { structPos[id] = { x: a.x, y: a.y }; });
+  }
+
+  // Réglages ForceAtlas2 enrichis (T3) : base + leviers exposés à l'utilisateur.
+  function fa2Settings() {
+    const s = FA2.inferSettings ? FA2.inferSettings(graph) : {};
+    s.gravity = 1.2;
+    s.scalingRatio = 12;
+    s.barnesHutOptimize = graph.order > 300;
+    s.adjustSizes = true;
+    s.linLogMode = !!forceSettings.linLog;                       // resserre les groupes
+    s.outboundAttractionDistribution = !!forceSettings.outbound; // écarte les pôles (hubs)
+    s.edgeWeightInfluence = forceSettings.edgeWeight;            // poids des ouvrages partagés
+    return s;
+  }
+
+  // Lance ForceAtlas2 (déterministe : aucune position aléatoire). Si « regrouper par
+  // communauté » est actif, on sème d'abord les positions par cluster Louvain.
+  function runForce(iterations) {
+    if (!FA2) return;
+    if (forceSettings.groupByCommunity) seedByCommunity();
+    // edgeWeightInfluence (setting standard) pilote le poids de l'attribut `weight`
+    // des arêtes (déjà lu par défaut) → inutile/risqué de passer getEdgeWeight.
+    FA2.assign(graph, { iterations, settings: fa2Settings() });
+  }
+
+  // Semis par communauté : chaque cluster Louvain (déjà calculé, porté par le nœud)
+  // démarre sur un centroïde distinct d'un cercle, légèrement étalé → FA2 part de
+  // groupes séparés et les garde compacts. Déterministe (pas de Math.random).
+  function seedByCommunity() {
+    const groups = {};
+    graph.forEachNode((id, a) => {
+      const c = (a.community == null) ? -1 : a.community;
+      (groups[c] || (groups[c] = [])).push(id);
+    });
+    const keys = Object.keys(groups).sort((x, y) => (+x) - (+y));
+    const K = keys.length || 1;
+    const R = 10 * Math.sqrt(K);
+    keys.forEach((key, gi) => {
+      const ang = (2 * Math.PI * gi) / K;
+      const cx = R * Math.cos(ang), cy = R * Math.sin(ang);
+      const members = groups[key];
+      const r = 1 + 0.5 * Math.sqrt(members.length);
+      members.forEach((id, k) => {
+        const a2 = (2 * Math.PI * k) / Math.max(1, members.length);
+        graph.setNodeAttribute(id, "x", cx + r * Math.cos(a2));
+        graph.setNodeAttribute(id, "y", cy + r * Math.sin(a2));
+      });
+    });
   }
 
   // Réseau temporel : on GARDE la disposition force des boules (leur Y) et on
@@ -214,8 +260,7 @@
     if (ymin == null || ymax == null) { return; }
     // Si aucune disposition structurelle mémorisée, en calculer une d'abord.
     if (!hasStruct() && FA2) {
-      const s = FA2.inferSettings ? FA2.inferSettings(graph) : {};
-      FA2.assign(graph, { iterations: 200, settings: s });
+      runForce(200);
       graph.forEachNode((id, a) => { structPos[id] = { x: a.x, y: a.y }; });
     }
     const span = (ymax - ymin) || 1;
@@ -249,8 +294,7 @@
 
   function ensureStruct() {
     if (hasStruct() || !FA2) return;
-    const s = FA2.inferSettings ? FA2.inferSettings(graph) : {};
-    FA2.assign(graph, { iterations: 200, settings: s });
+    runForce(200);
     graph.forEachNode((id, a) => { structPos[id] = { x: a.x, y: a.y }; });
   }
 

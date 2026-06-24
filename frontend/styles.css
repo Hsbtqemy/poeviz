@@ -239,6 +239,10 @@ button{font-family:inherit;cursor:pointer}
 .axis-decor .axis-cap{position:absolute;font-style:italic;font-weight:600;color:var(--ink)}
 .axis-decor-x .axis-cap{right:8px;bottom:6px}
 .axis-decor-y .axis-cap{left:6px;top:6px}
+/* cases à cocher (réglages de force) */
+.chk{display:flex;align-items:center;gap:6px;cursor:pointer;margin:3px 0;
+  font-family:system-ui,Arial,sans-serif;font-size:12.5px;color:var(--ink)}
+.chk input{cursor:pointer;accent-color:var(--sel)}
 
 /* tooltip */
 #tooltip{position:absolute;z-index:30;pointer-events:none;background:var(--ink);color:#fff;

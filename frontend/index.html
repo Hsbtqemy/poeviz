@@ -161,6 +161,14 @@
             <span data-v="alpha" class="on">alphabétique</span><span data-v="freq">fréquence</span>
           </div>
         </div>
+        <div class="ctrl" id="force-ctrl">
+          <label>Réglages de force</label>
+          <label class="chk"><input type="checkbox" id="force-linlog"> Resserrer les groupes</label>
+          <label class="chk"><input type="checkbox" id="force-outbound"> Écarter les pôles (hubs)</label>
+          <label class="chk"><input type="checkbox" id="force-community"> Regrouper par communauté</label>
+          <label style="margin-top:6px">Influence des liens partagés : <b id="force-weight-val">1</b></label>
+          <input type="range" id="force-weight" min="0" max="3" step="0.25" value="1" style="width:100%;accent-color:var(--sel)">
+        </div>
         <div class="ctrl">
           <label>Filtre temporel</label>
           <div class="seg" id="seg-timemode">

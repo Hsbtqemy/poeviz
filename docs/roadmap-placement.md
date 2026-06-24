@@ -184,6 +184,14 @@ disponibles ([`node_detail`](../backend/graph.py)) ; `mean_year` + `work_count` 
 
 ## T3 — A : Force enrichie
 
+> **État : livré.** Bloc « Réglages de force » (Options avancées) : `linLogMode` (resserrer les
+> groupes), `outboundAttractionDistribution` (écarter les hubs), `edgeWeightInfluence` (curseur
+> influence des liens), et **semis par communauté** Louvain (déterministe). Mutualisé via
+> `runForce()`/`fa2Settings()` (force + base des modes axes/temporel). Défaut inchangé (galaxie
+> identique). Bloc masqué hors dispositions à base de force ; curseur d'influence appliqué au
+> relâcher (pas de relayout par cran). **Reste (mineur)** : rafraîchir la base force en mode
+> axes/temporel sans repasser par la disposition force.
+
 **But.** Mieux *lire* la structure existante via les leviers de ForceAtlas2 + un regroupement
 par communauté. Reste émergent et déterministe.
 
