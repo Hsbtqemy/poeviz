@@ -79,6 +79,10 @@
     sigma.on("clickEdge", (e) => {
       if (callbacks.onEdgeClick && graph.hasEdge(e.edge)) callbacks.onEdgeClick(...graph.extremities(e.edge));
     });
+    sigma.on("doubleClickNode", (e) => {
+      e.preventSigmaDefault();                 // pas de zoom par défaut : on focalise
+      if (callbacks.onNodeDoubleClick) callbacks.onNodeDoubleClick(e.node);
+    });
     sigma.on("clickStage", () => callbacks.onBackground && callbacks.onBackground());
     sigma.on("enterNode", (e) => showTooltip(e.node));
     sigma.on("leaveNode", hideTooltip);

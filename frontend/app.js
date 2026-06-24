@@ -24,6 +24,7 @@
     axisX: "free", axisY: "force", axisOrder: "alpha",   // disposition « axes »
     force: { linLog: false, outbound: false, edgeWeight: 1, groupByCommunity: false },
     simAttract: false, simDims: [], simThreshold: 0.5,   // similarité (T4) : rapprocher les semblables
+    focus: null, focusHops: 1, focusTrail: [],           // mode focalisation (ego)
     showHinge: false,
     yearMin: null, yearMax: null,
     fullYearMin: null, fullYearMax: null,
@@ -55,6 +56,7 @@
    "size-by", "layout-sel", "axes-ctrl", "axis-x", "axis-y", "seg-axis-order",
    "force-ctrl", "force-linlog", "force-outbound", "force-community", "force-weight", "force-weight-val",
    "sim-ctrl", "sim-attract", "sim-opts", "sim-dims", "sim-threshold", "sim-threshold-val",
+   "focus-bar", "focus-label", "focus-depth", "focus-depth-val", "focus-back", "focus-exit",
    "display-mode", "rail-foot",
    "yr-min", "yr-max", "yr-lo", "yr-hi", "yr-reset", "timewrap",
    "tl", "tl-hist", "tl-window", "tl-play", "tl-speed",
@@ -279,6 +281,7 @@
         statusEl: el["statusline"], timeAxis: el["time-axis"],
         axisDecorX: $("axdec-x"), axisDecorY: $("axdec-y"),
         onSelect: selectNode, onBackground: deselect, onEdgeHover: edgeHover, onEdgeClick: selectEdge,
+        onNodeDoubleClick: (id) => enterFocus(id),
       });
       window.__netInit = true;
       window.addEventListener("resize", () => {
@@ -732,6 +735,14 @@
     el["sim-threshold"].addEventListener("change", (e) => {
       State.simThreshold = +e.target.value; State.layoutSig = null; refreshGraph();
     });
+    // Focalisation (ego) : profondeur, retour, sortie.
+    el["focus-depth"].addEventListener("input", (e) => { el["focus-depth-val"].textContent = e.target.value; });
+    el["focus-depth"].addEventListener("change", (e) => {
+      State.focusHops = +e.target.value; State.layoutSig = null;
+      if (State.focus) refreshGraph().then(() => NetView.centerOnNodes([State.focus]));
+    });
+    el["focus-back"].addEventListener("click", focusBack);
+    el["focus-exit"].addEventListener("click", exitFocus);
     el["search"].addEventListener("input", (e) => { State.search = e.target.value; NetView.applySearch(e.target.value); });
     el["dclose"].addEventListener("click", deselect);
     el["share-btn"].addEventListener("click", shareStub);
@@ -765,6 +776,7 @@
     p.set("size_by", State.sizeBy);
     if (State.pivot) p.set("pivot", State.pivot);
     if (State.yearMin != null) { p.set("year_min", State.yearMin); p.set("year_max", State.yearMax); }
+    if (State.focus) { p.set("focus", State.focus); p.set("hops", State.focusHops); }   // focalisation (ego)
     return p.toString();
   }
   function layoutSignature() {
@@ -774,6 +786,7 @@
       ax: State.layout === "axes" ? [State.axisX, State.axisY, State.axisOrder] : null,
       f: State.force,
       sim: State.simAttract ? { t: State.simThreshold, d: State.simDims.slice().sort() } : null,
+      fo: State.focus, fh: State.focus ? State.focusHops : null,
     });
   }
 
@@ -793,6 +806,12 @@
     try {
       const data = await getJSON("/graph?" + queryString());
       State.lastGraph = data;
+      // Focalisation : le nœud focal est hors de la vue (filtres/années) → le backend
+      // a ignoré le focus et renvoyé la vue complète ; on lève la focalisation proprement.
+      if (data.focus_dropped && State.focus) {
+        State.focus = null; State.focusTrail = []; updateFocusBar();
+        flash("Nœud focal hors de la vue (filtres / années) — focalisation levée.");
+      }
       const sig = layoutSignature();
       const relayout = sig !== State.layoutSig;
       // Disposition « axes » : on résout les specs X/Y et, au relayout, on récupère
@@ -816,6 +835,7 @@
       State.layoutSig = sig;
       NetView.setLabelsDensity(State.labels);
       updateEpochLegend(data.epoch_legend);
+      if (State.focus) updateFocusBar();      // libellé/retour à jour avec l'ego courant
       // pivot en mode « filtre seul » : on met en évidence + centre, sans relayouter
       if (State.pivot && State.pivotMode === "filter") {
         const ids = data.nodes.filter((n) => n.type === State.pivot).map((n) => n.id);
@@ -845,8 +865,13 @@
 
   // ------------------------------------------------------------- sélection
   async function selectNode(id) {
+    if (State.focus) { enterFocus(id); return; }   // en focalisation : clic = re-focalise
     State.selected = id;
     NetView.setHighlight(id);
+    showDetail(id);
+  }
+
+  async function showDetail(id) {
     try {
       let url = `/node/${encodeURIComponent(id)}?session_id=${State.sessionId}`;
       if (State.yearMin != null) url += `&year_min=${State.yearMin}&year_max=${State.yearMax}`;
@@ -855,9 +880,50 @@
   }
 
   function deselect() {
+    if (State.focus) { exitFocus(); return; }      // clic sur le fond en focalisation → on sort
     State.selected = null;
     NetView.setHighlight(null);
     el["detail"].classList.remove("open");
+  }
+
+  // ----------------------------------------------------------- focalisation (ego)
+  // Cliquer/double-cliquer un nœud le pose comme centre : la vue se restreint à son
+  // voisinage (sous-graphe ego), recentrée ; tous les réglages opèrent dessus. On
+  // navigue de proche en proche (clic d'un voisin re-focalise), avec un fil retour.
+  async function enterFocus(id) {
+    if (State.focus && State.focus !== id) State.focusTrail.push(State.focus);
+    State.focus = id; State.selected = id;
+    State.layoutSig = null;
+    NetView.setHighlight(null);          // l'ego EST le périmètre → aucun estompage
+    updateFocusBar();
+    await refreshGraph();
+    if (State.focus === id) { NetView.centerOnNodes([id]); showDetail(id); }   // si pas levé
+  }
+  async function focusBack() {
+    State.focus = State.focusTrail.length ? State.focusTrail.pop() : null;
+    State.selected = State.focus;
+    State.layoutSig = null;
+    NetView.setHighlight(null);
+    updateFocusBar();
+    await refreshGraph();
+    if (State.focus) { NetView.centerOnNodes([State.focus]); showDetail(State.focus); }
+  }
+  function exitFocus() {
+    State.focus = null; State.focusTrail = []; State.selected = null;
+    State.layoutSig = null; updateFocusBar();
+    NetView.setHighlight(null);
+    el["detail"].classList.remove("open");
+    refreshGraph();
+  }
+  function updateFocusBar() {
+    const on = !!State.focus;
+    el["focus-bar"].classList.toggle("hidden", !on);
+    if (!on) return;
+    const node = ((State.lastGraph && State.lastGraph.nodes) || []).find((n) => n.id === State.focus);
+    el["focus-label"].textContent = node ? node.label : String(State.focus).split("::").pop();
+    el["focus-depth"].value = State.focusHops;
+    el["focus-depth-val"].textContent = State.focusHops;
+    el["focus-back"].style.display = State.focusTrail.length ? "" : "none";
   }
 
   // Clic sur une arête → volet « pourquoi ce lien » (ouvrages communs + intermédiaires
@@ -946,7 +1012,11 @@
         });
       }
     }
+    const focusing = State.focus === d.id;
+    html = `<button class="focus-btn">${focusing ? "✕ Quitter la focalisation" : "🎯 Focaliser sur ce nœud"}</button>` + html;
     el["dbody"].innerHTML = html;
+    const fb = el["dbody"].querySelector(".focus-btn");
+    if (fb) fb.addEventListener("click", () => (focusing ? exitFocus() : enterFocus(d.id)));
     el["detail"].classList.add("open");
   }
   function stat(k, v) { return `<div class="stat"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`; }

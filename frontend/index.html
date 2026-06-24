@@ -226,6 +226,14 @@
 
     <div id="net">
       <div id="sigma"></div>
+      <div class="focus-bar hidden" id="focus-bar">
+        <span class="fb-lab">Focalisé : <b id="focus-label">—</b></span>
+        <span class="fb-depth">profondeur
+          <input type="range" id="focus-depth" min="1" max="3" step="1" value="1">
+          <b id="focus-depth-val">1</b></span>
+        <button class="fb-btn" id="focus-back" style="display:none">‹ Retour</button>
+        <button class="fb-btn" id="focus-exit">✕ Vue complète</button>
+      </div>
       <div id="cards"></div>
       <div id="tooltip"></div>
       <div class="statusline" id="statusline"></div>

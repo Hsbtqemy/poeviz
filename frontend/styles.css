@@ -243,6 +243,24 @@ button{font-family:inherit;cursor:pointer}
 .chk{display:flex;align-items:center;gap:6px;cursor:pointer;margin:3px 0;
   font-family:system-ui,Arial,sans-serif;font-size:12.5px;color:var(--ink)}
 .chk input{cursor:pointer;accent-color:var(--sel)}
+/* barre de focalisation (mode ego) : superposée en haut du canvas */
+/* centrée dans la zone À GAUCHE du panneau de détail (toujours ouvert en focalisation),
+   pour ne pas passer dessous (le panneau est superposé à droite) */
+.focus-bar{position:absolute;top:10px;left:calc((100% - var(--detail-w)) / 2);transform:translateX(-50%);z-index:15;
+  display:flex;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:6px 12px;box-shadow:0 3px 14px rgba(0,0,0,.12);
+  font-family:system-ui,Arial,sans-serif;font-size:12.5px;color:var(--ink)}
+.focus-bar .fb-lab b{color:var(--sel)}
+.focus-bar .fb-depth{display:flex;align-items:center;gap:6px;color:var(--muted)}
+.focus-bar .fb-depth input{width:80px;accent-color:var(--sel)}
+.focus-bar .fb-btn{border:1px solid var(--line);background:#fff;border-radius:7px;
+  padding:4px 10px;font-size:12px;color:var(--ink);cursor:pointer}
+.focus-bar .fb-btn:hover{background:var(--panel2)}
+/* bouton « Focaliser » dans la fiche de nœud */
+.focus-btn{width:100%;margin-bottom:10px;border:1px solid var(--sel);background:#fff;color:var(--sel);
+  border-radius:8px;padding:7px;font-size:12.5px;font-family:system-ui,Arial,sans-serif;
+  font-weight:bold;cursor:pointer}
+.focus-btn:hover{background:var(--sel);color:#fff}
 
 /* tooltip */
 #tooltip{position:absolute;z-index:30;pointer-events:none;background:var(--ink);color:#fff;
