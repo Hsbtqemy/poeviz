@@ -62,6 +62,9 @@ taille d'upload limitée, métriques mises en cache par vue.
 > statiques : elle doit **rester en cours d'exécution**, derrière un reverse-proxy.
 > Cible : un **VPS** avec accès SSH. *Le prototype, lui, se lance en local (ci-dessus) ;
 > cette section sert de repère pour le déploiement, pas une étape obligatoire.*
+>
+> 📦 **Pack prêt à l'emploi** dans [`deploy/`](deploy/) : guide pas-à-pas + fichiers
+> `systemd` / `nginx` / `.env` pré-remplis. Cette section en est le résumé.
 
 **État en mémoire, mono-process.** Chaque session vit dans la RAM du process : **ne
 lancez pas plusieurs workers** (ils ne partagent pas les sessions). Un redémarrage
@@ -125,8 +128,9 @@ Certificat TLS gratuit via **Let's Encrypt** : `sudo certbot --nginx -d carto.ex
 
 ### 4. Avant d'exposer
 
-- **Restreindre le CORS** : dans [`backend/main.py`](backend/main.py), remplacer
-  `allow_origins=["*"]` par l'origine réelle (`["https://carto.exemple.fr"]`).
+- **Restreindre le CORS** : définir la variable d'env `ALLOWED_ORIGINS` sur l'origine
+  réelle (`ALLOWED_ORIGINS=https://carto.exemple.fr`), p. ex. dans le `.env`. Défaut
+  `*` (pratique en local). Plusieurs origines = séparées par des virgules.
 - Vérifier que `client_max_body_size` (nginx) ≥ `MAX_UPLOAD_MB` (app).
 
 ---

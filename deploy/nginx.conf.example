@@ -1,0 +1,28 @@
+# Reverse-proxy nginx pour poeviz.edito-revue.fr
+# Installation :
+#   sudo cp deploy/nginx.conf.example /etc/nginx/sites-available/poeviz
+#   sudo ln -s /etc/nginx/sites-available/poeviz /etc/nginx/sites-enabled/
+#   sudo nginx -t && sudo systemctl reload nginx
+#
+# Puis TLS (Let's Encrypt, gratuit) :
+#   sudo certbot --nginx -d poeviz.edito-revue.fr
+# certbot AJOUTE automatiquement le bloc `listen 443 ssl` + la redirection 80 -> 443.
+# (Garder ce bloc HTTP tel quel avant de lancer certbot.)
+
+server {
+    listen 80;
+    listen [::]:80;                       # IPv6 (le VPS a une IPv4 et une IPv6)
+    server_name poeviz.edito-revue.fr;
+
+    # Uploads .xlsx : doit dépasser MAX_UPLOAD_MB (25 Mo) côté app.
+    client_max_body_size 30m;
+
+    location / {
+        # Le port doit correspondre à PORT du .env (défaut 8000).
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

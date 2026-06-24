@@ -1,0 +1,8 @@
+# Fichiers interprétés sous Linux : toujours en LF, même édités sous Windows.
+# (Un CRLF casserait le shebang des .sh et laisserait un \r dans les valeurs du .env.)
+*.sh                       text eol=lf
+deploy/update.sh           text eol=lf
+deploy/redeploy.sh         text eol=lf
+deploy/poeviz.service      text eol=lf
+deploy/nginx.conf.example  text eol=lf
+deploy/.env.example        text eol=lf

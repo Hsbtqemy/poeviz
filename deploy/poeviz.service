@@ -1,0 +1,30 @@
+# Service systemd pour poeviz (FastAPI/Uvicorn, process unique, état en mémoire).
+# Installation :
+#   sudo cp deploy/poeviz.service /etc/systemd/system/poeviz.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now poeviz
+# Journaux :  journalctl -u poeviz -f
+
+[Unit]
+Description=poeviz — cartographie interactive de métadonnées
+After=network.target
+
+[Service]
+Type=simple
+User=poeviz
+Group=poeviz
+WorkingDirectory=/srv/poeviz
+EnvironmentFile=/srv/poeviz/.env
+# UN SEUL process : les sessions vivent en mémoire, elles ne se partagent pas entre workers.
+ExecStart=/srv/poeviz/.venv/bin/python -m backend.main
+Restart=on-failure
+RestartSec=3
+
+# Durcissement léger
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

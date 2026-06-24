@@ -14,6 +14,9 @@ exports/
 *.gexf
 !design/*.png
 
+# Configuration locale / secrets (le modèle deploy/.env.example reste suivi)
+.env
+
 # Tests e2e (puppeteer + node_modules volumineux)
 .e2e/
 

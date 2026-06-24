@@ -10,6 +10,7 @@ Lancement :  uvicorn backend.main:app --reload
 """
 from __future__ import annotations
 
+import os
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -30,14 +31,19 @@ MAX_SESSIONS = 12                 # plafond de sessions en mémoire (éviction L
 MAX_UPLOAD_MB = 25                # taille max d'un .xlsx accepté
 MAX_METRICS_CACHE = 128           # vues mémorisées par session (cache des métriques)
 
+# Origines autorisées (CORS). Défaut « * » (pratique en local) ; en production,
+# définir ALLOWED_ORIGINS sur l'origine publique, séparées par des virgules, p. ex.
+# `ALLOWED_ORIGINS=https://poeviz.edito-revue.fr`. (Le front et l'API sont servis sur
+# la même origine → le CORS est surtout du durcissement défensif.)
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",")
+                   if o.strip()] or ["*"]
+
 app = FastAPI(title="Cartographie interactive de métadonnées",
               description="Tableur Excel → réseau d'entités explorable",
               version="1.0.0")
 
-# CORS « ouvert » : pratique pour un usage local. À restreindre (allow_origins=[...])
-# si l'outil est un jour exposé sur un réseau.
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+    CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_methods=["*"], allow_headers=["*"],
 )
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
@@ -665,7 +671,6 @@ def run() -> None:
     `HOST=0.0.0.0 PORT=8000 python -m backend.main`. Défaut volontairement local
     (`127.0.0.1`) → on n'expose jamais l'interface publique par accident.
     NB : état en mémoire → garder UN seul process (pas de workers multiples)."""
-    import os
     import uvicorn
     uvicorn.run(
         app,
