@@ -143,11 +143,14 @@ Certificat TLS gratuit via **Let's Encrypt** : `sudo certbot --nginx -d carto.ex
    - **Nœud** — la colonne devient un type d'entité affiché (chaque valeur = un nœud).
    - **Lien** — relie les nœuds sans être affichée (typiquement le *titre*, qui relie
      auteur ↔ traducteur ↔ éditeur d'une même ligne).
-   - **Info** — enrichit la fiche d'un nœud (année, genre, lieu…), sans peser sur le graphe.
-   - **Ignoré** — non utilisée.
+   - **Masqué** — type d'entité **caché par défaut** : disponible dans les couches
+     (affichable d'un clic), présent dans les fiches et — si coché « Carte » — sur les
+     cartes ; il n'encombre simplement pas la vue de départ.
+   - **Ignoré** — exclue : ni nœud, ni fiche, ni carte (donnée écartée).
 
-   Le même champ peut être nœud, lien ou info selon le choix → **des cartes
-   différentes depuis la même donnée**. Vous nommez aussi ici **l'unité qui relie
+   Le même champ peut être nœud, lien ou masqué selon le choix → **des cartes
+   différentes depuis la même donnée**. Une case **« Carte »** (indépendante du rôle)
+   choisit, par colonne, ce qui s'affiche sur la carte au zoom. Vous nommez aussi ici **l'unité qui relie
    les entités** (une ligne du tableur) : *objet* par défaut, ou un mot dérivé du
    nom de la feuille (« traduction », « film »…). Ce nom s'affiche partout —
    interface et exports. Et si plusieurs lignes décrivent la **même chose** (ex. un
@@ -178,7 +181,7 @@ Certificat TLS gratuit via **Let's Encrypt** : `sudo certbot --nginx -d carto.ex
 | **Regrouper les lignes par** | fusionne les lignes partageant un identifiant commun en **une seule charnière** (ex. VO + traduction d'une même œuvre) — relie sans nœud-identifiant parasite |
 | **Organiser autour de** (pivot) | *réorganise* (le pivot influence la disposition) ou *filtre seul* (centre/met en évidence) |
 | **Focalisation (ego)** | double-clic (ou bouton) sur un nœud → la vue se restreint à son **voisinage** (1–3 sauts), recentrée ; tous les réglages (force, MDS, couches, temps) opèrent sur ce sous-graphe et les **centralités deviennent locales**. Clic d'un voisin → re-focalise (fil d'Ariane + Retour) ; ✕ ou clic sur le fond → graphe complet |
-| **Couches (3 états)** | **toute** colonne non-ignorée (entité, titre, info, année) cycle, **sans reconfigurer**, entre *affiché* (nœud visible), *relie* (invisible mais connecte — la « lentille ») et *hors* (exclu). Le rôle ne donne que le défaut. Permet d'explorer « auteurs reliés via traducteur » puis « via genre » à la volée — y compris **afficher** un genre/lieu comme points |
+| **Couches (3 états)** | **toute** colonne non-ignorée (entité, titre, info, année) cycle, **sans reconfigurer**, entre *affiché* (nœud visible), *relie* (invisible mais connecte — la « lentille ») et *masqué* (présent mais non dessiné — un clic le réaffiche). Le rôle ne donne que le défaut. Permet d'explorer « auteurs reliés via traducteur » puis « via genre » à la volée — y compris **afficher** un genre/lieu comme points |
 | **Survol / clic d'une arête** | survol → info-bulle expliquant **pourquoi** deux nœuds sont reliés (ouvrages communs + intermédiaires partagés, ex. *via le traducteur X*) ; **clic → volet « Pourquoi ce lien »** persistant (la paire est isolée et centrée) |
 | **(nom choisi) (charnière)** | affiche les lignes comme nœuds-charnières, ou les garde implicites *(le libellé suit le nom choisi)* |
 | **Liens d'une couche masquée** | *se reportent* (projection : on relie les voisins entre eux) ou *se coupent* |
