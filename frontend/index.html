@@ -350,10 +350,12 @@
   </div>
 </div>
 
-<!-- Librairies réseau (CDN, UMD) -->
-<script src="https://cdn.jsdelivr.net/npm/graphology@0.25.4/dist/graphology.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/graphology-library@0.8.0/dist/graphology-library.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/sigma@3.0.3/dist/sigma.min.js"></script>
+<!-- Librairies réseau (UMD), vendorisées dans frontend/vendor/ — versions figées,
+     déploiement 100 % autonome : aucun appel à un CDN tiers (cf. README §Déploiement).
+     graphology@0.25.4 · graphology-library@0.8.0 · sigma@3.0.3 -->
+<script src="vendor/graphology.umd.min.js"></script>
+<script src="vendor/graphology-library.min.js"></script>
+<script src="vendor/sigma.min.js"></script>
 <script src="render.js"></script>
 <script src="app.js"></script>
 </body>

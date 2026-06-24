@@ -62,7 +62,8 @@ session, rangé dans un dictionnaire Python indexé par un `session_id`. Fermer 
 serveur efface tout — c'est un outil d'exploration, pas un entrepôt.
 
 Le frontend est en **HTML/CSS/JS vanilla** (aucun framework type React) ; les trois
-librairies réseau sont chargées par **CDN** (jsDelivr), en build UMD.
+librairies réseau (graphology, graphology-library, sigma) sont **vendorisées** dans
+`frontend/vendor/` en build UMD (versions figées, aucun appel CDN → déploiement autonome).
 
 ---
 

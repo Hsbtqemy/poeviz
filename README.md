@@ -56,6 +56,81 @@ taille d'upload limitée, métriques mises en cache par vue.
 
 ---
 
+## Déploiement (VPS)
+
+> L'app est un **service Python persistant** (FastAPI/Uvicorn), pas des fichiers
+> statiques : elle doit **rester en cours d'exécution**, derrière un reverse-proxy.
+> Cible : un **VPS** avec accès SSH. *Le prototype, lui, se lance en local (ci-dessus) ;
+> cette section sert de repère pour le déploiement, pas une étape obligatoire.*
+
+**État en mémoire, mono-process.** Chaque session vit dans la RAM du process : **ne
+lancez pas plusieurs workers** (ils ne partagent pas les sessions). Un redémarrage
+remet les sessions à zéro — c'est voulu (outil d'exploration, pas un entrepôt). Les
+données restent sur le serveur : rien n'est envoyé à des tiers, le contenu des
+tableurs n'est pas journalisé.
+
+### 1. Lancer le service (hôte/port par variables d'environnement)
+
+```bash
+# Écoute sur toutes les interfaces, port 8000 — pour passer derrière nginx.
+HOST=0.0.0.0 PORT=8000 python -m backend.main
+# Équivalent explicite via la CLI Uvicorn :
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
+# (option) via Gunicorn — UN SEUL worker Uvicorn (état en mémoire ; `pip install gunicorn`) :
+gunicorn backend.main:app -k uvicorn.workers.UvicornWorker -w 1 -b 0.0.0.0:8000
+```
+
+Sans `HOST`/`PORT`, l'app écoute sur `127.0.0.1:8000` (défaut local sûr). En général,
+on garde le service sur `127.0.0.1` et **seul nginx** (local) lui parle.
+
+### 2. Service systemd (rester allumé, redémarrage auto)
+
+```ini
+# /etc/systemd/system/poeviz.service
+[Unit]
+Description=poeviz — cartographie de métadonnées
+After=network.target
+
+[Service]
+WorkingDirectory=/srv/poeviz
+Environment=HOST=127.0.0.1
+Environment=PORT=8000
+ExecStart=/srv/poeviz/.venv/bin/python -m backend.main
+Restart=on-failure
+User=poeviz
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`sudo systemctl enable --now poeviz`.
+
+### 3. nginx en reverse-proxy + HTTPS
+
+```nginx
+server {
+    server_name carto.exemple.fr;
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    client_max_body_size 30m;   # doit dépasser MAX_UPLOAD_MB (25 Mo) côté app
+}
+```
+
+Certificat TLS gratuit via **Let's Encrypt** : `sudo certbot --nginx -d carto.exemple.fr`
+(ajoute le bloc `listen 443 ssl` et la redirection 80 → 443).
+
+### 4. Avant d'exposer
+
+- **Restreindre le CORS** : dans [`backend/main.py`](backend/main.py), remplacer
+  `allow_origins=["*"]` par l'origine réelle (`["https://carto.exemple.fr"]`).
+- Vérifier que `client_max_body_size` (nginx) ≥ `MAX_UPLOAD_MB` (app).
+
+---
+
 ## Comment ça marche (en 4 temps)
 
 1. **Dépôt** — vous déposez un `.xlsx`. Le backend lit chaque colonne, mesure son
@@ -167,7 +242,7 @@ partagés). En mode *cut*, le lien disparaît.
 
 **Stack** : FastAPI + Uvicorn ; pandas + openpyxl ; networkx ; python-louvain ;
 matplotlib (export). Frontend : Sigma.js v3 + graphology (WebGL), HTML/CSS/JS vanilla,
-librairies chargées par CDN.
+librairies **vendorisées** dans `frontend/vendor/` (versions figées, aucun appel CDN).
 
 ### API (REST)
 

@@ -636,3 +636,27 @@ def post_export(body: ExportBody):
 
 if FRONTEND_DIR.exists():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
+
+
+# --------------------------------------------------------------------------
+# Point d'entrée serveur (déploiement VPS)
+# --------------------------------------------------------------------------
+
+def run() -> None:
+    """Lance Uvicorn en lisant l'hôte et le port depuis l'environnement.
+
+    Permet de placer l'app derrière un reverse-proxy (VPS) sans toucher au code :
+    `HOST=0.0.0.0 PORT=8000 python -m backend.main`. Défaut volontairement local
+    (`127.0.0.1`) → on n'expose jamais l'interface publique par accident.
+    NB : état en mémoire → garder UN seul process (pas de workers multiples)."""
+    import os
+    import uvicorn
+    uvicorn.run(
+        app,
+        host=os.getenv("HOST", "127.0.0.1"),
+        port=int(os.getenv("PORT", "8000")),
+    )
+
+
+if __name__ == "__main__":
+    run()
