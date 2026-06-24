@@ -177,6 +177,7 @@ Certificat TLS gratuit via **Let's Encrypt** : `sudo certbot --nginx -d carto.ex
 | **Nom d'une ligne** | comment appeler l'unité qui relie les entités (ex. *livre*, *film*, *traduction*) — *objet* par défaut, ou dérivé du nom de la feuille ; apparaît dans toute l'interface et les exports |
 | **Regrouper les lignes par** | fusionne les lignes partageant un identifiant commun en **une seule charnière** (ex. VO + traduction d'une même œuvre) — relie sans nœud-identifiant parasite |
 | **Organiser autour de** (pivot) | *réorganise* (le pivot influence la disposition) ou *filtre seul* (centre/met en évidence) |
+| **Focalisation (ego)** | double-clic (ou bouton) sur un nœud → la vue se restreint à son **voisinage** (1–3 sauts), recentrée ; tous les réglages (force, MDS, couches, temps) opèrent sur ce sous-graphe et les **centralités deviennent locales**. Clic d'un voisin → re-focalise (fil d'Ariane + Retour) ; ✕ ou clic sur le fond → graphe complet |
 | **Couches (3 états)** | **toute** colonne non-ignorée (entité, titre, info, année) cycle, **sans reconfigurer**, entre *affiché* (nœud visible), *relie* (invisible mais connecte — la « lentille ») et *hors* (exclu). Le rôle ne donne que le défaut. Permet d'explorer « auteurs reliés via traducteur » puis « via genre » à la volée — y compris **afficher** un genre/lieu comme points |
 | **Survol / clic d'une arête** | survol → info-bulle expliquant **pourquoi** deux nœuds sont reliés (ouvrages communs + intermédiaires partagés, ex. *via le traducteur X*) ; **clic → volet « Pourquoi ce lien »** persistant (la paire est isolée et centrée) |
 | **(nom choisi) (charnière)** | affiche les lignes comme nœuds-charnières, ou les garde implicites *(le libellé suit le nom choisi)* |
@@ -256,9 +257,16 @@ librairies **vendorisées** dans `frontend/vendor/` (versions figées, aucun app
 | `GET /demo` | charge le fichier de démonstration |
 | `GET /profile` | colonnes : type, unicité, rôle suggéré |
 | `POST /configure` | construit le graphe maître à partir des rôles |
-| `GET /graph` | nœuds + arêtes projetés (positions, taille, couleur, cluster) |
+| `GET /graph` | nœuds + arêtes projetés (positions, taille, couleur, cluster) ; `focus`/`hops` pour la focalisation (ego) |
+| `GET /edge` | pourquoi deux nœuds sont reliés (ouvrages communs + intermédiaires partagés) |
+| `GET /cards` | valeurs de carte des charnières (entités liées, attributs, année) — chargées une fois |
+| `GET /timeline` | nombre d'ouvrages par année (histogramme / frise temporelle) |
+| `GET /chronology` | données de la vue Chronologie (une entité du pivot par ligne, dans le temps) |
 | `GET /node/{id}` | fiche d'un nœud (attributs, stats, ouvrages liés) |
 | `GET /metrics` | table des métriques |
+| `GET /axes` | agrégat d'attributs par nœud (dispositions « axes » et « similarité ») |
+| `GET /similar` | arêtes latentes de similarité d'attributs (force de rapprochement) |
+| `GET /mds` | positions de la disposition « similarité (MDS) » |
 | `POST /export` | fichier (image / GEXF / CSV / XLSX) à partir de la vue |
 
 ---

@@ -105,7 +105,8 @@ Pour **chaque colonne**, le programme mesure :
 À partir de ces mesures, une **heuristique suggère un rôle** :
 - taux d'unicité ≈ 1 (ex. un *titre*, presque toujours différent) → plutôt un **lien** ;
 - taux faible/moyen avec répétitions (ex. *Auteur*, *Éditeur*) → plutôt un **nœud** ;
-- numérique ou catégoriel court (ex. *Année*, *Genre*) → plutôt une **info**.
+- numérique ou catégoriel court (ex. *Année*, *Genre*) → plutôt **masqué**
+  (présent, mais non dessiné par défaut).
 
 > **Méthodologie : suggérer, pas décider.** Le profilage ne fait que pré-remplir.
 > L'utilisateur garde la main, et le taux d'unicité est affiché pour l'aider à
@@ -120,10 +121,10 @@ Chaque colonne reçoit un des quatre rôles :
 |---|---|
 | **Nœud** | la colonne devient un type d'entité affiché (chaque valeur = un point) |
 | **Lien** | relie sans être affichée (typiquement le *titre*, qui nomme la ligne) |
-| **Info** | enrichit la fiche d'un nœud (année, genre…) sans peser sur le graphe |
-| **Ignoré** | non utilisée |
+| **Masqué** | type d'entité **caché par défaut** : affichable d'un clic (couches), présent dans les fiches et — si coché « Carte » — sur les cartes |
+| **Ignoré** | exclue : ni nœud, ni fiche, ni carte |
 
-Le **même champ** peut devenir nœud, lien ou info → **des cartes différentes depuis
+Le **même champ** peut devenir nœud, lien ou masqué → **des cartes différentes depuis
 la même donnée**. On nomme aussi ici l'**unité-charnière** (une ligne) : un seul mot
 au singulier, le pluriel est dérivé automatiquement.
 
@@ -182,6 +183,11 @@ vers un graphe à un mode**, technique classique en analyse de réseaux.
   *relie* / *masqué* **en direct**, sans reconstruire (`connector_layers`). On découvre
   ainsi « auteurs reliés via traducteur » puis « via genre », ou on **affiche** un
   genre/lieu comme points. Le rôle ne donne que l'état par défaut (`meta.layer_cols`).
+- **Focalisation (ego)** : double-cliquer un nœud restreint la vue à son **voisinage**
+  (1–3 sauts) — sous-graphe isolé, recentré, dont les métriques (centralités,
+  communautés) et la disposition (force, MDS) se **recalculent localement**. On navigue
+  de proche en proche (cliquer un voisin re-focalise, avec un fil retour) ; ✕ rend le
+  graphe complet. Paramètres `focus`/`hops` sur `/graph` (`graph.ego_nodes`).
 
 > **Méthodologie : projeter, pas reconstruire.** Le graphe maître est immuable ;
 > changer un réglage ne fait que recalculer une projection. D'où l'instantanéité.
