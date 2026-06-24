@@ -122,7 +122,8 @@ class ExportBody(BaseModel):
 def parse_projection(layers: str | None, link_mode: str, show_hinge: bool,
                      year_min: int | None, year_max: int | None,
                      pivot: str | None,
-                     connectors: str | None = None) -> graph.ProjectionParams:
+                     connectors: str | None = None,
+                     focus: str | None = None, hops: int = 1) -> graph.ProjectionParams:
     layer_list = None
     if layers is not None and layers != "":
         layer_list = [x for x in layers.split(",") if x]
@@ -136,6 +137,7 @@ def parse_projection(layers: str | None, link_mode: str, show_hinge: bool,
         layers=layer_list, link_mode=link_mode, show_hinge=show_hinge,
         year_min=year_min, year_max=year_max, pivot=pivot or None,
         connector_layers=connector_list,
+        focus=focus or None, hops=max(1, min(3, hops)),     # focalisation (ego), 1..3 sauts
     )
 
 
@@ -145,13 +147,24 @@ def build_view(session: Session, params: graph.ProjectionParams,
     G, meta = session.master, session.meta
     P = graph.project(G, meta, params)
 
+    # Focalisation (ego) : restreindre la vue au voisinage du nœud focal (sous-graphe),
+    # pour que métriques / force / MDS se recalculent LOCALEMENT. focus hors-vue (filtré
+    # par les couches ou la fenêtre temporelle) → ignoré, signalé via focus_dropped.
+    focus_dropped = False
+    if params.focus:
+        if params.focus in P:
+            P = P.subgraph(graph.ego_nodes(P, params.focus, params.hops)).copy()
+        else:
+            focus_dropped = True
+
     # Métriques : coûteuses (Louvain + centralités). Elles ne dépendent que de la
-    # PROJECTION (couches/liens/charnière/années) + size_by, pas de la couleur.
+    # PROJECTION (couches/liens/charnière/années/focalisation) + size_by, pas de la couleur.
     # On les mémorise → changer la couleur ou revenir sur une vue est instantané.
     cache_key = (
         tuple(sorted(params.layers)) if params.layers is not None else None,
         tuple(sorted(params.connector_layers)) if params.connector_layers is not None else None,
         params.link_mode, params.show_hinge, params.year_min, params.year_max, size_by,
+        params.focus, params.hops,
     )
     cache = session.metrics_cache
     metrics = cache.get(cache_key)
@@ -213,6 +226,7 @@ def build_view(session: Session, params: graph.ProjectionParams,
         "node_layers": meta.node_cols,
         "color_by": color_by,
         "size_by": size_key,
+        "focus_dropped": focus_dropped,
         "epoch_legend": {
             "year_min": meta.year_min, "year_max": meta.year_max,
             "stops": [{"pos": p, "color": c} for p, c in graph.EPOCH_STOPS],
@@ -362,11 +376,13 @@ def get_graph(
     year_min: int | None = None,
     year_max: int | None = None,
     connectors: str | None = None,
+    focus: str | None = None,
+    hops: int = 1,
 ) -> dict[str, Any]:
     session = get_session(session_id)
     require_master(session)
     params = parse_projection(layers, link_mode, show_hinge, year_min, year_max,
-                              pivot, connectors)
+                              pivot, connectors, focus, hops)
     return build_view(session, params, color_by=color_by, size_by=size_by)
 
 

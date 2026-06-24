@@ -260,6 +260,18 @@ def test_axis_values_handles_decimal_comma():
     assert vals["Note"]["Auteur::A"] == 5.0
 
 
+def test_ego_nodes_bfs():
+    """Focalisation : ego à N sauts dans le graphe projeté (focus inclus)."""
+    G, meta = graph.build_master_graph(make_df(), ROLES, SEP)
+    P = graph.project(G, meta, graph.ProjectionParams())   # report, charnière masquée
+    ego1 = graph.ego_nodes(P, "Auteur::A", 1)
+    assert "Auteur::A" in ego1
+    assert "Éditeur::E1" in ego1 and "Éditeur::E2" in ego1   # voisins directs de A
+    assert "Auteur::B" not in ego1                            # B est à 2 sauts (via E1)
+    assert "Auteur::B" in graph.ego_nodes(P, "Auteur::A", 2)
+    assert graph.ego_nodes(P, "Auteur::inexistant", 1) == set()
+
+
 def test_similarity_links_similar_nodes():
     """T4 : deux auteurs SANS ouvrage commun mais au même genre sont reliés par une
     arête latente de similarité ; un troisième, de genre différent, ne l'est pas."""

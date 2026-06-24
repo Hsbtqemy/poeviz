@@ -400,6 +400,30 @@ class ProjectionParams:
     # types en rôle NŒUD masqués relient (rétro-compat). Liste = seuls ces types
     # relient ; les autres types masqués sont totalement exclus (ni vus, ni reliants).
     connector_layers: list[str] | None = None
+    # Focalisation (ego) : si `focus` est l'id d'un nœud, la vue est restreinte à son
+    # voisinage à `hops` sauts (sous-graphe), métriques recalculées dessus (cf. /graph).
+    focus: str | None = None
+    hops: int = 1
+
+
+def ego_nodes(P: nx.Graph, focus: str, hops: int) -> set[str]:
+    """Nœuds à au plus `hops` sauts de `focus` dans le graphe **projeté** (BFS), focus
+    inclus. Sert à la disposition « focalisation » (sous-graphe ego)."""
+    if focus not in P:
+        return set()
+    seen = {focus}
+    frontier = {focus}
+    for _ in range(max(1, hops)):
+        nxt: set[str] = set()
+        for u in frontier:
+            for v in P.neighbors(u):
+                if v not in seen:
+                    seen.add(v)
+                    nxt.add(v)
+        if not nxt:
+            break
+        frontier = nxt
+    return seen
 
 
 def project(G: nx.Graph, meta: MasterMeta, params: ProjectionParams) -> nx.Graph:

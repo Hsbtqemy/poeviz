@@ -202,6 +202,25 @@ def test_axes_inert_by_default():
     assert all("attr_agg" not in n and "axis" not in n for n in g["nodes"])
 
 
+def test_graph_focus_restricts_to_ego():
+    sid = configured_demo()
+    g = client.get(f"/graph?session_id={sid}").json()
+    focus = next(n["id"] for n in g["nodes"] if n["type"] == "Auteur")
+    gf = client.get("/graph", params={"session_id": sid, "focus": focus, "hops": 1}).json()
+    ids = {n["id"] for n in gf["nodes"]}
+    assert focus in ids                                   # le nœud focal est là
+    assert len(gf["nodes"]) < len(g["nodes"])             # vue restreinte à l'ego
+    assert gf["focus_dropped"] is False
+
+
+def test_graph_focus_dropped_when_absent():
+    sid = configured_demo()
+    full = client.get(f"/graph?session_id={sid}").json()
+    gf = client.get("/graph", params={"session_id": sid, "focus": "Auteur::inexistant"}).json()
+    assert gf["focus_dropped"] is True                    # focus hors-vue → ignoré
+    assert len(gf["nodes"]) == len(full["nodes"])         # vue complète conservée
+
+
 def test_unknown_session_404():
     assert client.get("/graph?session_id=inexistant").status_code == 404
 
