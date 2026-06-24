@@ -38,6 +38,8 @@
   let axesMode = false, axisMetaX = null, axisMetaY = null;
   // réglages de la force (ForceAtlas2), pilotés depuis les Options avancées
   let forceSettings = { linLog: false, outbound: false, edgeWeight: 1, groupByCommunity: false };
+  // arêtes latentes de similarité (T4) : injectées le temps du calcul de force, jamais affichées
+  let latentEdges = [];
 
   let focusSet = null;        // ids à garder en évidence (null = tout)
   let selected = null;        // nœud cliqué
@@ -163,6 +165,7 @@
     temporalMode = (opts.layoutKind === "temporal");
     axesMode = (opts.layoutKind === "axes");
     if (opts.force) forceSettings = opts.force;     // réglages de force (T3)
+    latentEdges = opts.latentEdges || [];           // arêtes de similarité (T4)
     tYearMin = opts.yearMin; tYearMax = opts.yearMax;
 
     if (opts.relayout) {
@@ -223,9 +226,28 @@
   function runForce(iterations) {
     if (!FA2) return;
     if (forceSettings.groupByCommunity) seedByCommunity();
-    // edgeWeightInfluence (setting standard) pilote le poids de l'attribut `weight`
-    // des arêtes (déjà lu par défaut) → inutile/risqué de passer getEdgeWeight.
+    // Similarité (T4) : on injecte des arêtes latentes invisibles le temps du calcul,
+    // puis on les retire — elles tirent les nœuds semblables sans jamais s'afficher
+    // ni compter dans le graphe visible. edgeWeightInfluence (setting standard) pilote
+    // le poids des arêtes (déjà lu par défaut) → inutile/risqué de passer getEdgeWeight.
+    const added = addLatentEdges(latentEdges);
     FA2.assign(graph, { iterations, settings: fa2Settings() });
+    removeLatentEdges(added);
+  }
+
+  function addLatentEdges(list) {
+    const added = [];
+    (list || []).forEach((e) => {
+      if (e.source === e.target) return;
+      if (!graph.hasNode(e.source) || !graph.hasNode(e.target)) return;
+      if (graph.hasEdge(e.source, e.target)) return;   // ne pas perturber une arête réelle
+      graph.addEdge(e.source, e.target, { weight: e.weight || 0.5, latent: true });
+      added.push([e.source, e.target]);
+    });
+    return added;
+  }
+  function removeLatentEdges(added) {
+    added.forEach(([s, t]) => { if (graph.hasEdge(s, t)) graph.dropEdge(s, t); });
   }
 
   // Semis par communauté : chaque cluster Louvain (déjà calculé, porté par le nœud)

@@ -105,6 +105,8 @@ taille d'upload limitée, métriques mises en cache par vue.
 | **Couleur des nœuds** | par **type** d'entité, par **communauté** (Louvain), ou par **époque** (année moyenne d'activité → dégradé, avec légende) |
 | **Taille des nœuds** | par centralité : degré, intermédiarité, vecteur propre |
 | **Disposition** | force (galaxie), **temporel** (axe horizontal = temps), **axes** (X *et* Y au choix : libre/force, temps, centralité, ou un **attribut** — numérique → position, catégoriel → colonnes ordonnées), circulaire, dispersée |
+| **Réglages de force** | resserrer les groupes (LinLog), écarter les pôles (hubs), influence des liens partagés (poids des ouvrages communs), regrouper par **communauté** (semis par cluster Louvain) |
+| **Similarité** | *rapprocher les nœuds semblables* : relie en coulisses (sans l'afficher) les entités d'un même type aux **profils d'attributs proches** (genre, langue, lieu…) — les attributs pris en compte sont réglables |
 | **Densité des étiquettes** | toutes / pivots / aucune |
 | **Affichage** | *automatique* (points → étiquettes → cartes selon le zoom), *toujours points*, *toujours cartes* — plus **épinglage** d'une carte sur un nœud |
 | **Champs de la carte** | au zoom rapproché, choisir les infos affichées sur la carte d'une charnière/ligne (auteur, traducteur, année, genre…) — réglable à la volée |

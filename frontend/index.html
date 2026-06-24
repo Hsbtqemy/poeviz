@@ -169,6 +169,11 @@
           <label style="margin-top:6px">Influence des liens partagés : <b id="force-weight-val">1</b></label>
           <input type="range" id="force-weight" min="0" max="3" step="0.25" value="1" style="width:100%;accent-color:var(--sel)">
         </div>
+        <div class="ctrl" id="sim-ctrl">
+          <label>Similarité</label>
+          <label class="chk"><input type="checkbox" id="sim-attract"> Rapprocher les nœuds semblables</label>
+          <div id="sim-dims" style="display:none"></div>
+        </div>
         <div class="ctrl">
           <label>Filtre temporel</label>
           <div class="seg" id="seg-timemode">

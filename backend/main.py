@@ -535,6 +535,27 @@ def get_axes(
     return {"available": available, "values": values}
 
 
+@app.get("/similar")
+def get_similar(
+    session_id: str,
+    dims: str | None = None,
+    threshold: float = 0.5,
+    year_min: int | None = None,
+    year_max: int | None = None,
+) -> dict[str, Any]:
+    """Arêtes latentes de similarité d'attributs (cosinus, par type) — la « force »
+    de la disposition par similarité (T4). Le front les injecte invisiblement dans
+    ForceAtlas2 pour rapprocher les nœuds qui se ressemblent. `dims` = attributs
+    catégoriels pris en compte ; vide → aucune arête."""
+    session = get_session(session_id)
+    require_master(session)
+    dim_list = [x for x in (dims or "").split(",") if x]
+    params = graph.ProjectionParams(year_min=year_min, year_max=year_max)
+    edges = graph.similarity_edges(session.master, session.meta, params, dim_list,
+                                   threshold=threshold)
+    return {"edges": edges}
+
+
 @app.post("/export")
 def post_export(body: ExportBody):
     session = get_session(body.session_id)

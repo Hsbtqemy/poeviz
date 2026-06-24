@@ -23,6 +23,7 @@
     layout: "force",
     axisX: "free", axisY: "force", axisOrder: "alpha",   // disposition « axes »
     force: { linLog: false, outbound: false, edgeWeight: 1, groupByCommunity: false },
+    simAttract: false, simDims: [],   // similarité (T4) : rapprocher les nœuds semblables
     showHinge: false,
     yearMin: null, yearMax: null,
     fullYearMin: null, fullYearMax: null,
@@ -53,6 +54,7 @@
    "card-fields", "card-fields-ctrl", "card-fields-note",
    "size-by", "layout-sel", "axes-ctrl", "axis-x", "axis-y", "seg-axis-order",
    "force-ctrl", "force-linlog", "force-outbound", "force-community", "force-weight", "force-weight-val",
+   "sim-ctrl", "sim-attract", "sim-dims",
    "display-mode", "rail-foot",
    "yr-min", "yr-max", "yr-lo", "yr-hi", "yr-reset", "timewrap",
    "tl", "tl-hist", "tl-window", "tl-play", "tl-speed",
@@ -300,6 +302,7 @@
     buildPivotList();
     buildLayers();
     buildAxisControls();
+    buildSimControls();
     buildCardFields();
     buildTimeline();
     toggleTemporalUI(State.fullYearMin != null);
@@ -407,6 +410,38 @@
       const r = await getJSON("/axes?" + p.toString());
       return r.values || {};
     } catch (e) { flash("Erreur axes : " + e.message); return {}; }
+  }
+
+  // Similarité (T4) : cases des attributs catégoriels pris en compte (débrayables —
+  // pas de boîte noire). Toutes cochées par défaut.
+  function buildSimControls() {
+    const cats = (State.summary.layer_cols || []).filter((c) => c.activable && c.kind !== "numeric");
+    State.simDims = cats.map((c) => c.col);
+    el["sim-dims"].innerHTML = "";
+    cats.forEach((c) => {
+      const lab = document.createElement("label");
+      lab.className = "chk";
+      lab.innerHTML = `<input type="checkbox" checked> ${esc(c.col)}`;
+      lab.querySelector("input").addEventListener("change", (e) => {
+        if (e.target.checked) { if (!State.simDims.includes(c.col)) State.simDims.push(c.col); }
+        else { State.simDims = State.simDims.filter((d) => d !== c.col); }
+        State.layoutSig = null; refreshGraph();
+      });
+      el["sim-dims"].appendChild(lab);
+    });
+    el["sim-dims"].style.display = State.simAttract ? "" : "none";
+    el["sim-ctrl"].style.display = ["force", "temporal", "axes"].includes(State.layout) ? "" : "none";
+  }
+
+  // Récupère les arêtes latentes de similarité (vide si désactivé / aucun attribut).
+  async function fetchSimilar() {
+    if (!State.simAttract || !State.simDims.length) return [];
+    const p = new URLSearchParams({ session_id: State.sessionId, dims: State.simDims.join(",") });
+    if (State.yearMin != null) { p.set("year_min", State.yearMin); p.set("year_max", State.yearMax); }
+    try {
+      const r = await getJSON("/similar?" + p.toString());
+      return r.edges || [];
+    } catch (e) { flash("Erreur similarité : " + e.message); return []; }
   }
 
   function setPivot(value) {
@@ -649,8 +684,9 @@
       State.layout = e.target.value; State.layoutSig = null;
       el["axes-ctrl"].style.display = (State.layout === "axes") ? "" : "none";
       // Les réglages de force ne concernent que les dispositions à base de force.
-      el["force-ctrl"].style.display =
-        ["force", "temporal", "axes"].includes(State.layout) ? "" : "none";
+      const forceBased = ["force", "temporal", "axes"].includes(State.layout);
+      el["force-ctrl"].style.display = forceBased ? "" : "none";
+      el["sim-ctrl"].style.display = forceBased ? "" : "none";
       refreshGraph();
     });
     el["axis-x"].addEventListener("change", (e) => { State.axisX = e.target.value; State.layoutSig = null; refreshGraph(); });
@@ -670,6 +706,11 @@
     });
     el["force-weight"].addEventListener("change", (e) => {
       State.force = { ...State.force, edgeWeight: +e.target.value };
+      State.layoutSig = null; refreshGraph();
+    });
+    el["sim-attract"].addEventListener("change", (e) => {
+      State.simAttract = e.target.checked;
+      el["sim-dims"].style.display = State.simAttract ? "" : "none";
       State.layoutSig = null; refreshGraph();
     });
     el["search"].addEventListener("input", (e) => { State.search = e.target.value; NetView.applySearch(e.target.value); });
@@ -713,6 +754,7 @@
       lay: State.layout, piv: State.pivotMode === "reorganize" ? State.pivot : null,
       ax: State.layout === "axes" ? [State.axisX, State.axisY, State.axisOrder] : null,
       f: State.force,
+      sim: State.simAttract ? State.simDims.slice().sort() : null,
     });
   }
 
@@ -742,9 +784,11 @@
         axisY = axisSpec(State.axisY, "y");
         if (relayout) axisData = await fetchAxisData(axisX, axisY);
       }
+      // Similarité (T4) : arêtes latentes récupérées au relayout, injectées dans FA2.
+      const latentEdges = (relayout && State.simAttract) ? await fetchSimilar() : null;
       NetView.render(data, {
         relayout, layoutKind: State.layout,
-        axisX, axisY, axisData, force: State.force,
+        axisX, axisY, axisData, force: State.force, latentEdges,
         pivot: State.pivot, pivotMode: State.pivotMode,
         yearMin: State.fullYearMin, yearMax: State.fullYearMax,
       });

@@ -171,6 +171,21 @@ def test_axes_endpoint():
     assert isinstance(a_year, (int, float))
 
 
+def test_similar_endpoint():
+    sid = configured_demo()
+    r = client.get("/similar", params={"session_id": sid, "dims": "Genre"}).json()
+    assert "edges" in r and isinstance(r["edges"], list)
+    assert r["edges"]                                   # des auteurs partagent un genre
+    e = r["edges"][0]
+    assert e["source"] and e["target"] and 0 < e["weight"] <= 1
+
+
+def test_similar_empty_dims():
+    sid = configured_demo()
+    r = client.get("/similar", params={"session_id": sid, "dims": ""}).json()
+    assert r["edges"] == []
+
+
 def test_axes_inert_by_default():
     """La brique est inerte : /graph ne porte aucun agrégat (vue par défaut intacte)."""
     sid = configured_demo()

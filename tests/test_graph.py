@@ -260,6 +260,30 @@ def test_axis_values_handles_decimal_comma():
     assert vals["Note"]["Auteur::A"] == 5.0
 
 
+def test_similarity_links_similar_nodes():
+    """T4 : deux auteurs SANS ouvrage commun mais au même genre sont reliés par une
+    arête latente de similarité ; un troisième, de genre différent, ne l'est pas."""
+    df = pd.DataFrame({
+        "Titre": ["T1", "T2", "T3"],
+        "Auteur": ["A", "B", "C"],
+        "Genre": ["Roman", "Roman", "Essai"],
+    })
+    roles = {"Titre": "edge", "Auteur": "node", "Genre": "attribute"}
+    G, meta = graph.build_master_graph(df, roles, SEP)
+    edges = graph.similarity_edges(G, meta, graph.ProjectionParams(), ["Genre"], threshold=0.5)
+    pairs = {frozenset((e["source"], e["target"])) for e in edges}
+    assert frozenset(("Auteur::A", "Auteur::B")) in pairs        # même genre → similaires
+    assert frozenset(("Auteur::A", "Auteur::C")) not in pairs    # genres différents
+    # poids = cosinus (1.0 pour des profils identiques)
+    ab = next(e for e in edges if {e["source"], e["target"]} == {"Auteur::A", "Auteur::B"})
+    assert ab["weight"] == 1.0
+
+
+def test_similarity_empty_without_dims():
+    G, meta = graph.build_master_graph(make_axis_df(), AXIS_ROLES, SEP)
+    assert graph.similarity_edges(G, meta, graph.ProjectionParams(), []) == []
+
+
 def test_axis_values_dominant_is_deterministic():
     """Ex æquo départagé par ordre alphabétique → résultat stable."""
     df = pd.DataFrame({

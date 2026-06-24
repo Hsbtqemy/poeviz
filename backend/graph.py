@@ -23,6 +23,7 @@ la carte se déconnecte.
 from __future__ import annotations
 
 import itertools
+import math
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
@@ -706,6 +707,76 @@ def axis_values(G: nx.Graph, meta: MasterMeta, params: ProjectionParams,
             if agg is not None:
                 result[dim][n] = agg
     return result
+
+
+def similarity_edges(G: nx.Graph, meta: MasterMeta, params: ProjectionParams,
+                     dims: Iterable[str], threshold: float = 0.5,
+                     top_k: int = 6) -> list[dict[str, Any]]:
+    """Arêtes « latentes » de SIMILARITÉ entre nœuds d'un MÊME type : on rapproche
+    ceux dont les profils d'attributs se ressemblent, même sans ouvrage commun.
+
+    Vecteur d'un nœud = comptes des valeurs de ses dimensions catégorielles choisies,
+    sur ses ouvrages actifs ; similarité = cosinus. On garde les paires ≥ seuil, en
+    plafonnant à `top_k` voisins par nœud (évite les cliques O(n²)). La similarité
+    numérique (distance) n'est pas couverte ici — voir roadmap. Renvoie
+    `[{source, target, weight}]` (weight = cosinus, paires dédupliquées)."""
+    dim_list = [str(d) for d in dims if d]
+    if not dim_list:
+        return []
+    kind_of = {e["col"]: e.get("kind", "categorical") for e in meta.layer_cols}
+    cat_dims = [d for d in dim_list if kind_of.get(d, "categorical") != "numeric"]
+    if not cat_dims:
+        return []
+
+    active = _active_works(G, params)
+    feats: dict[str, dict[str, int]] = {}
+    norms: dict[str, float] = {}
+    by_type: dict[str, list[str]] = {}
+    for n, d in G.nodes(data=True):
+        if d.get("kind") != "entity":
+            continue
+        works = [w for w in G.neighbors(n) if w in active]
+        if not works:
+            continue
+        f: dict[str, int] = {}
+        for dim in cat_dims:
+            for w in works:
+                for v in _work_dim_values(G, w, dim, meta):
+                    key = f"{dim}::{v}"
+                    f[key] = f.get(key, 0) + 1
+        if not f:
+            continue
+        feats[n] = f
+        norms[n] = math.sqrt(sum(c * c for c in f.values()))
+        by_type.setdefault(d["type"], []).append(n)
+
+    # Cosinus par type ; on retient pour chaque nœud ses voisins au-dessus du seuil.
+    per_node: dict[str, list[tuple[float, str]]] = {}
+    for nodes in by_type.values():
+        for i in range(len(nodes)):
+            a = nodes[i]
+            fa, na = feats[a], norms[a]
+            for j in range(i + 1, len(nodes)):
+                b = nodes[j]
+                nb = norms[b]
+                if na == 0 or nb == 0:
+                    continue
+                small, big = (fa, feats[b]) if len(fa) <= len(feats[b]) else (feats[b], fa)
+                dot = sum(c * big[k] for k, c in small.items() if k in big)
+                if dot == 0:
+                    continue
+                sim = dot / (na * nb)
+                if sim >= threshold:
+                    per_node.setdefault(a, []).append((sim, b))
+                    per_node.setdefault(b, []).append((sim, a))
+
+    edges: dict[tuple[str, str], float] = {}
+    for node, lst in per_node.items():
+        lst.sort(key=lambda x: (-x[0], x[1]))
+        for sim, other in lst[:top_k]:
+            key = (node, other) if node < other else (other, node)
+            edges[key] = round(sim, 3)
+    return [{"source": a, "target": b, "weight": w} for (a, b), w in edges.items()]
 
 
 def node_detail(G: nx.Graph, meta: MasterMeta, node_id: str,

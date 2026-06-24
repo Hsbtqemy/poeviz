@@ -220,6 +220,13 @@ par communauté. Reste émergent et déterministe.
 
 ## T4 — B-force : Similarité comme attraction
 
+> **État : livré.** `graph.similarity_edges` (cosinus sur les profils d'attributs **catégoriels**,
+> par type, seuil + cap top-k) et endpoint `/similar`. Toggle « Rapprocher les nœuds semblables »
+> avec cases des attributs pris en compte (débrayables). Les arêtes latentes sont injectées
+> **invisiblement** dans ForceAtlas2 le temps du calcul puis retirées (jamais affichées ni
+> comptées ni exportées). **Reste** : similarité **numérique** (distance) ; mode « similarité
+> pure » (ignorer la structure) ; curseur de seuil exposé (fixé à 0,5 pour l'instant).
+
 **But.** Le saut analytique, version compatible avec l'invariant : rapprocher les nœuds
 *similaires* (attributs) sans jeter la force ni les arêtes structurantes.
 
