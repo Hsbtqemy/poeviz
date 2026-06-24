@@ -641,10 +641,48 @@ def work_card(G: nx.Graph, meta: MasterMeta, node_id: str) -> dict[str, str]:
     return out
 
 
-def all_work_cards(G: nx.Graph, meta: MasterMeta) -> dict[str, dict[str, str]]:
-    """Cartes de toutes les charnières, calculées en une passe (servies par /cards)."""
-    return {n: work_card(G, meta, n)
-            for n, d in G.nodes(data=True) if d.get("kind") == "work"}
+def entity_card(G: nx.Graph, meta: MasterMeta, node_id: str) -> dict[str, str]:
+    """Valeurs affichables sur la carte d'une **entité** (profil 2-sauts) : ses
+    co-entités par type (auteurs, genres, langues, éditeurs… rencontrés via ses
+    ouvrages), les attributs cumulés et sa période d'activité. Invariante par
+    projection (profil complet) → comme les cartes de charnière, servie par /cards."""
+    by_type: dict[str, set[str]] = {}
+    attrs: dict[str, set[str]] = {}
+    years: list[int] = []
+    for w in G.neighbors(node_id):
+        wd = G.nodes[w]
+        if wd.get("kind") != "work":
+            continue
+        if wd.get("year") is not None:
+            years.append(wd["year"])
+        for k, v in (wd.get("attributes") or {}).items():
+            attrs.setdefault(str(k), set()).add(str(v))
+        for nb in G.neighbors(w):
+            if nb == node_id:
+                continue
+            nd = G.nodes[nb]
+            if nd.get("kind") == "entity":
+                by_type.setdefault(nd["type"], set()).add(nd.get("label", nb))
+    out: dict[str, str] = {t: " · ".join(sorted(v)[:6]) for t, v in by_type.items()}
+    for k, v in attrs.items():
+        out[k] = " · ".join(sorted(v)[:4])
+    if years and meta.time_col:
+        lo, hi = min(years), max(years)
+        out[str(meta.time_col)] = str(lo) if lo == hi else f"{lo}–{hi}"
+    return out
+
+
+def all_node_cards(G: nx.Graph, meta: MasterMeta) -> dict[str, dict[str, str]]:
+    """Cartes de TOUS les nœuds en une passe (servies par /cards) : charnières
+    (valeurs de la ligne) ET entités (profil agrégé sur leurs ouvrages)."""
+    out: dict[str, dict[str, str]] = {}
+    for n, d in G.nodes(data=True):
+        kind = d.get("kind")
+        if kind == "work":
+            out[n] = work_card(G, meta, n)
+        elif kind == "entity":
+            out[n] = entity_card(G, meta, n)
+    return out
 
 
 # --------------------------------------------------------------------------

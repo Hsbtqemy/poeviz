@@ -60,9 +60,10 @@ def test_cards_endpoint_and_graph_omits_card():
     cards = client.get(f"/cards?session_id={sid}").json()
     assert works and works[0] in cards
     assert "Auteur" in cards[works[0]]
-    # une entité n'a pas de carte
-    ent = next(n["id"] for n in g["nodes"] if n["kind"] == "entity")
-    assert ent not in cards
+    # les entités ont AUSSI une carte (profil agrégé : co-entités, attributs, période)
+    ent = next(n["id"] for n in g["nodes"] if n["kind"] == "entity" and n["type"] == "Traducteur")
+    assert ent in cards and cards[ent]                 # carte d'entité non vide
+    assert "Auteur" in cards[ent]                      # un traducteur affiche ses auteurs
 
 
 def test_node_detail_and_metrics():

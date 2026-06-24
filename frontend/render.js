@@ -49,6 +49,7 @@
   let cardFields = [];        // colonnes à afficher sur la carte d'une charnière
   let hoveredEdge = null;     // arête survolée (anti-bulle fantôme sur réponse async)
   let cardData = {};          // {id charnière: {champ: valeur}} — chargé une fois via /cards
+  let paletteMap = {};        // {type d'entité: couleur} — pastilles des cartes
   let lodMode = "labels";     // points | labels | cards (résolu selon zoom)
   let pivotCutoff = 0;        // taille mini pour étiqueter en mode "pivots"
   const pinned = new Set();   // cartes épinglées
@@ -589,6 +590,23 @@
     cardDivs.forEach((div, id) => { if (!wanted.has(id)) { div.remove(); cardDivs.delete(id); } });
   }
 
+  // Lignes de carte (champs cochés) pour un nœud — charnière ou entité. Une ligne par
+  // champ présent dans cardData : pastille de couleur du type · libellé · valeur.
+  function cardFieldRows(id) {
+    const card = cardData[id];
+    let rows = "";
+    (cardFields || []).forEach((f) => {
+      const v = card && card[f];
+      if (v == null || v === "") return;
+      const col = paletteMap[f];
+      const dot = col ? `<span class="cl-dot" style="background:${col}"></span>`
+                      : `<span class="cl-dot cl-dot-attr"></span>`;
+      rows += `<div class="cl">${dot}<span class="ck">${escapeHtml(f)}</span>` +
+              `<span class="cv">${escapeHtml(String(v))}</span></div>`;
+    });
+    return rows;
+  }
+
   function placeCard(id, a, p, isPinned) {
     let div = cardDivs.get(id);
     if (!div) {
@@ -597,19 +615,17 @@
       div.innerHTML = `<div class="band"></div><div class="body"><div class="t"></div><div class="s"></div></div><span class="pin-btn" title="Épingler">📌</span>`;
       div.querySelector(".band").style.background = a.baseColor;
       div.querySelector(".t").textContent = a.label;
+      // Champs choisis par l'utilisateur (réglables à la volée), une ligne chacun :
+      // pastille du type · LIBELLÉ (capitales grises) · valeur. Charnière ET entité
+      // (profil agrégé) tirent leurs valeurs de cardData (via /cards), pas du nœud.
+      const rows = cardFieldRows(id);
       if (a.kind === "work") {
-        // Carte d'un livre : champs choisis par l'utilisateur (réglables à la volée).
-        // Les valeurs viennent de cardData (chargé une fois via /cards), pas du nœud.
-        const card = cardData[id];
-        const lines = [];
-        (cardFields || []).forEach((f) => {
-          const v = card && card[f];
-          if (v != null && v !== "") lines.push(`${escapeHtml(f)} : ${escapeHtml(String(v))}`);
-        });
-        div.querySelector(".s").innerHTML = lines.length ? lines.join("<br>") : escapeHtml(cap(unitSingular));
+        div.querySelector(".s").innerHTML = rows ||
+          `<div class="cl"><span class="cv">${escapeHtml(cap(unitSingular))}</span></div>`;
       } else {
         const sub = `${a.ntype || ""}${a.work_count ? " · " + a.work_count + " " + (a.work_count > 1 ? unitPlural : unitSingular) : ""}`;
-        div.querySelector(".s").textContent = sub;
+        div.querySelector(".s").innerHTML =
+          `<div class="cl cl-sub"><span class="cv">${escapeHtml(sub)}</span></div>` + rows;
       }
       div.querySelector(".pin-btn").addEventListener("click", (ev) => {
         ev.stopPropagation();
@@ -745,6 +761,11 @@
     cardDivs.forEach((d) => d.remove()); cardDivs.clear();
     if (sigma) scheduleCards();
   }
+  function setPalette(map) {
+    paletteMap = map || {};
+    cardDivs.forEach((d) => d.remove()); cardDivs.clear();   // pastilles figées → reconstruire
+    if (sigma) scheduleCards();
+  }
   function resize() { if (sigma) sigma.refresh(); scheduleCards(); }
 
   // --------------------------------------------------- extraction pour l'export
@@ -794,7 +815,7 @@
 
   window.NetView = {
     init, render, setHighlight, setFocus, applySearch, centerOnNodes,
-    setLabelsDensity, setDisplayMode, setUnitLabels, setCardFields, setCardData, resize, getPositions,
+    setLabelsDensity, setDisplayMode, setUnitLabels, setCardFields, setCardData, setPalette, resize, getPositions,
     getViewNodes, getViewEdges, neighborhood,
     getMetrics: () => ({ nodes: graph ? graph.order : 0, edges: graph ? graph.size : 0 }),
     temporalWidth: TEMPORAL_WIDTH,

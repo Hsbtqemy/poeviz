@@ -35,11 +35,11 @@
     <div class="legend">
       <span><span class="chip" style="background:var(--role-node)"></span>Nœud — entité affichée dans le réseau</span>
       <span><span class="chip" style="background:var(--role-edge)"></span>Lien — relie les nœuds entre eux</span>
-      <span><span class="chip" style="background:var(--role-attr)"></span>Info — s'affiche dans la fiche</span>
-      <span><span class="chip" style="background:#EFEDE7;border:1px solid var(--line)"></span>Ignoré</span>
+      <span><span class="chip" style="background:#EFEDE7;border:1px solid var(--line)"></span>Ignoré — exclue (ni nœud, ni fiche, ni carte)</span>
+      <span><span class="chip" style="background:var(--role-attr)"></span>Masqué — type d'entité caché par défaut (affichable d'un clic)</span>
     </div>
     <table class="roles-table">
-      <thead><tr><th>Colonne détectée</th><th>Valeurs uniques</th><th style="text-align:right">Rôle</th></tr></thead>
+      <thead><tr><th>Colonne détectée</th><th>Valeurs uniques</th><th style="text-align:right">Rôle</th><th style="text-align:center">Carte</th></tr></thead>
       <tbody id="roles-body"></tbody>
     </table>
     <div class="unit-field">
@@ -84,7 +84,7 @@
 
     <div class="search"><input id="search" placeholder="Rechercher un nœud…"></div>
 
-    <button class="side-btn" id="reconfig" title="Modifier le rôle des colonnes (nœud / lien / info)">
+    <button class="side-btn" id="reconfig" title="Modifier le rôle des colonnes (nœud / lien / masqué / ignoré)">
       <span aria-hidden="true">⚙</span> Configurer les rôles des colonnes
     </button>
 

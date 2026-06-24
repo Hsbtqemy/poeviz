@@ -178,8 +178,8 @@ relie « en clique » ses voisins visibles. C'est une **projection de graphe bip
 vers un graphe à un mode**, technique classique en analyse de réseaux.
 
 - **Lentille (3 états par couche, symétrie complète)** : **toute** colonne non-ignorée
-  (titre, info, année comprises) est un type de nœud du maître et se règle *affiché* /
-  *connecteur* / *hors* **en direct**, sans reconstruire (`connector_layers`). On découvre
+  (titre, masqué, année comprises) est un type de nœud du maître et se règle *affiché* /
+  *relie* / *masqué* **en direct**, sans reconstruire (`connector_layers`). On découvre
   ainsi « auteurs reliés via traducteur » puis « via genre », ou on **affiche** un
   genre/lieu comme points. Le rôle ne donne que l'état par défaut (`meta.layer_cols`).
 

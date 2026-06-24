@@ -407,12 +407,12 @@ def get_edge(
 
 @app.get("/cards")
 def get_cards(session_id: str) -> dict[str, dict[str, str]]:
-    """Cartes des charnières (entités liées + attributs + année), invariantes par
-    projection. Le front les récupère une fois (au 1er affichage de la couche
-    charnière) et les réutilise — au lieu de les recevoir à chaque cran du curseur."""
+    """Cartes de tous les nœuds — charnières (valeurs de la ligne) ET entités (profil
+    agrégé : co-entités, attributs, période). Invariantes par projection ; le front
+    les récupère une fois et les réutilise (plutôt qu'à chaque cran du curseur)."""
     session = get_session(session_id)
     require_master(session)
-    return graph.all_work_cards(session.master, session.meta)
+    return graph.all_node_cards(session.master, session.meta)
 
 
 @app.get("/timeline")

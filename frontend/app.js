@@ -123,15 +123,16 @@
     // Nouveau fichier : on repart des suggestions (pas de la config du fichier précédent).
     State.summary = null;
     State.appliedRoles = null; State.appliedUnit = null; State.appliedHingeKey = "";
-    State.cardFieldsSel = null;
+    State.cardFieldsSel = null; State.appliedCards = null;
     showRoles();
     // Raccourci de validation : ?auto=1 construit directement avec les rôles suggérés.
     if (/[?&]auto=1/.test(location.search)) buildGraph();
   }
 
   // --------------------------------------------------------- écran des rôles
-  const ROLE_LABELS = { node: "Nœud", edge: "Lien", attribute: "Info", ignore: "Ignoré" };
+  const ROLE_LABELS = { node: "Nœud", edge: "Lien", attribute: "Masqué", ignore: "Ignoré" };
   let workingRoles = {};
+  let workingCards = {};   // présence sur la carte par colonne (indépendant du rôle)
 
   // Pluriel français approximatif (miroir de ingest.pluralize_fr) — sert à
   // l'aperçu ; le pluriel officiel est recalculé côté serveur à la configuration.
@@ -158,9 +159,13 @@
   function showRoles() {
     // Reprend la dernière config appliquée si elle existe, sinon les suggestions.
     const applied = State.appliedRoles;
-    workingRoles = {};
+    workingRoles = {}; workingCards = {};
+    const appliedC = State.appliedCards;
     State.profile.columns.forEach((c) => {
       workingRoles[c.name] = (applied && applied[c.name] != null) ? applied[c.name] : c.suggested_role;
+      // Présence sur la carte (indépendante du rôle) : défaut = colonnes nœud + masqué.
+      workingCards[c.name] = (appliedC && appliedC[c.name] != null)
+        ? appliedC[c.name] : ["node", "attribute"].includes(workingRoles[c.name]);
     });
     el["roles-body"].innerHTML = "";
     State.profile.columns.forEach((c) => el["roles-body"].appendChild(rolesRow(c)));
@@ -179,17 +184,29 @@
   function rolesRow(col) {
     const tr = document.createElement("tr"); tr.className = "rrow";
     const pct = Math.round((col.uniqueness || 0) * 100);
-    const roles = ["node", "edge", "attribute", "ignore"].map((r) =>
+    const roles = ["node", "edge", "ignore", "attribute"].map((r) =>
       `<span class="role ${r} ${workingRoles[col.name] === r ? "on" : ""}" data-role="${r}">${ROLE_LABELS[r]}</span>`).join("");
     tr.innerHTML = `
       <td><div class="col-name">${esc(col.name)}</div><div class="col-sample">${esc((col.samples || []).slice(0, 3).join(", "))}${col.dtype !== "text" ? " · " + col.dtype : ""}</div></td>
       <td class="uniq">${col.n_unique} / ${col.n_filled}<span class="bar"><i style="width:${pct}%"></i></span></td>
-      <td><div class="roles">${roles}</div></td>`;
+      <td><div class="roles">${roles}</div></td>
+      <td class="card-cell" title="Afficher cette colonne sur la carte (indépendant du rôle)"><input type="checkbox" class="card-chk"></td>`;
+    const chk = tr.querySelector(".card-chk");
+    // La carte n'a de sens que pour nœud / masqué (le lien = titre de carte ; ignoré = absent).
+    const refreshCard = () => {
+      const cardable = ["node", "attribute"].includes(workingRoles[col.name]);
+      chk.disabled = !cardable;
+      chk.checked = cardable && !!workingCards[col.name];
+      tr.querySelector(".card-cell").classList.toggle("disabled", !cardable);
+    };
+    chk.addEventListener("change", () => { workingCards[col.name] = chk.checked; });
     tr.querySelectorAll(".role").forEach((span) => span.addEventListener("click", () => {
       workingRoles[col.name] = span.dataset.role;
       tr.querySelectorAll(".role").forEach((s) => s.classList.toggle("on", s.dataset.role === span.dataset.role));
+      refreshCard();
       updateRolesHint();
     }));
+    refreshCard();
     return tr;
   }
 
@@ -199,8 +216,8 @@
     const j = (a) => a.map((x) => esc(x)).join(", ") || "—";
     el["roles-hint"].innerHTML =
       `Nœuds : <b class="n">${j(by.node)}</b> — reliés par <b class="e">${j(by.edge)}</b>. ` +
-      `Infos en fiche : <b class="a">${j(by.attribute)}</b>.<br>` +
-      `Astuce : passez une colonne « Info » vers « Nœud » et ses valeurs deviennent des points du réseau. La même donnée, une carte différente.`;
+      `Masqués (dispo., non affichés) : <b class="a">${j(by.attribute)}</b>.<br>` +
+      `Astuce : un « Masqué » est un type de nœud caché par défaut — ses valeurs sont dans la fiche (et sur la carte si coché), et s'affichent d'un clic dans « Couches visibles ».`;
     // Avertissement doux : une colonne quasi-unique convient mieux comme lien.
     const uniq = {};
     (State.profile.columns || []).forEach((c) => { uniq[c.name] = c.uniqueness; });
@@ -257,6 +274,11 @@
       // donc on mémorise null pour réafficher cette suggestion à la réouverture.
       State.appliedUnit = el["unit-singular"].value.trim() || null;
       State.appliedHingeKey = el["hinge-key"].value || "";
+      // Présence sur la carte : amorce la sélection des « Champs sur la carte »
+      // (colonnes cochées « Carte » ET en rôle nœud/masqué). Reste ajustable en direct.
+      State.appliedCards = { ...workingCards };
+      State.cardFieldsSel = Object.keys(workingCards).filter(
+        (c) => workingCards[c] && ["node", "attribute"].includes(workingRoles[c]));
       el["roles-overlay"].classList.add("hidden");
       startApp();
     } catch (e) { el["roles-status"].textContent = "Erreur : " + e.message; }
@@ -296,11 +318,13 @@
     if (el["chrono-sub"]) el["chrono-sub"].textContent =
       `Une ligne par entité ; chaque point est un ${unitS()} placé dans le temps.`;
     NetView.setUnitLabels(unitS(), unitP());
-    // Le graphe vient d'être (re)construit → cartes invalidées, rechargées à la demande
-    // (au 1er affichage de la couche charnière) plutôt qu'à chaque cran du curseur.
+    NetView.setPalette(State.summary.palette || {});   // pastilles de type sur les cartes
+    // Le graphe vient d'être (re)construit → cartes invalidées. On (re)charge les cartes
+    // une fois (charnières ET entités, désormais) : elles servent dès le zoom sur un
+    // nœud, pas seulement quand la charnière est affichée.
     State.cardsLoaded = false;
     NetView.setCardData({});
-    if (State.showHinge) ensureCardData();
+    ensureCardData();
 
     buildPivotList();
     buildLayers();
@@ -482,10 +506,10 @@
     else if (State.connectors.has(t)) { State.connectors.delete(t); }
     else { State.layersOn.add(t); }
   }
-  const LAYER_STATE_LABEL = { shown: "affiché", connector: "relie", off: "hors" };
+  const LAYER_STATE_LABEL = { shown: "affiché", connector: "relie", off: "masqué" };
 
   // Panneau unifié : TOUTE colonne non-ignorée (titre, info, année comprises) cycle
-  // affiché → relie → hors. Le rôle d'origine donne juste l'état par défaut.
+  // affiché → relie → masqué. Le rôle d'origine donne juste l'état par défaut.
   function buildLayers() {
     el["layers-list"].innerHTML = "";
     (State.summary.layer_cols || []).forEach((L) => {
@@ -510,8 +534,8 @@
           `<span class="ct">${State.summary.type_counts[t] || L.n_unique}</span>`;
       };
       row.title = L.warn
-        ? "Quasi-unique : « affiché » donne des nœuds isolés. Clic : affiché → relie → hors"
-        : "Cliquer pour cycler : affiché → relie (lentille) → hors";
+        ? "Quasi-unique : « affiché » donne des nœuds isolés. Clic : affiché → relie → masqué"
+        : "Cliquer pour cycler : affiché → relie (lentille) → masqué";
       row.addEventListener("click", () => { cycleLayer(t); paint(); refreshGraph(); });
       paint();
       el["layers-list"].appendChild(row);
