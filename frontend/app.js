@@ -83,7 +83,7 @@
    "chrono-btn", "chrono-overlay", "chrono-close", "chrono-title", "chrono-sub",
    "chrono-pivot", "chrono-color", "chrono-status", "chrono-scroll",
    "stats-btn", "stats-close", "stats-screen", "stats-scope", "stats-meta",
-   "stats-traits", "stats-grain", "stats-table"
+   "stats-traits", "stats-grain", "stats-table", "hasard-btn", "hasard-btn-stats"
   ].forEach((id) => { el[id] = $(id); });
 
   // Nom de la charnière (« objet / objets » par défaut). cap() capitalise pour
@@ -1488,9 +1488,23 @@
   // Si l'écran stats est ouvert en « vue courante », il suit les changements de filtres.
   function maybeSyncStats() { if (statsOpen() && State.statsScope === "view") loadStats(); }
 
+  // Sérendipité : tire une entité AU HASARD dans la vue courante et ouvre sa fiche (qui la
+  // situe par ses stats). Tirage franchement aléatoire — la découverte, pas un top déguisé.
+  function randomDiscover() {
+    const nodes = (State.lastGraph && State.lastGraph.nodes) || [];
+    const pool = nodes.filter((n) => n.kind === "entity");
+    const from = pool.length ? pool : nodes;
+    if (!from.length) { flash("Rien à explorer dans cette vue."); return; }
+    const pick = from[Math.floor(Math.random() * from.length)];
+    if (statsOpen()) closeStats();
+    requestAnimationFrame(() => { NetView.centerOnNodes([pick.id]); selectNode(pick.id); });
+  }
+
   function initStats() {
     el["stats-btn"].addEventListener("click", openStats);
     el["stats-close"].addEventListener("click", closeStats);
+    el["hasard-btn"].addEventListener("click", randomDiscover);
+    el["hasard-btn-stats"].addEventListener("click", randomDiscover);
     wireSeg(el["stats-scope"], (v) => { State.statsScope = v; State.statsSort = { col: null, dir: -1 }; loadStats(); });
     wireSeg(el["stats-grain"], (v) => { State.statsGrain = v; State.statsSort = { col: null, dir: -1 }; renderStatsTable(); });
   }

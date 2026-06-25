@@ -327,6 +327,11 @@ données** du parcours est défini ici pour que T6 le sérialise).
 
 ## T5 — Sérendipité : « Au hasard » / marche aléatoire
 
+> **État : partiel (tirage simple livré).** Bouton « 🎲 Au hasard » (barre du haut + en-tête
+> stats) → `randomDiscover` tire une entité **franchement au hasard** dans la **vue courante**
+> (respecte les filtres) et ouvre sa fiche (qui la situe). **Reste** : le **parcours au hasard**
+> (marche aléatoire de lien en lien) — dépend du moteur de parcours T4.
+
 **But.** La **découverte**. Le bouton « Au hasard » = le moteur de parcours (T4) lâché en
 **marche aléatoire** sur les arêtes → un chemin inattendu entre entités sans rapport apparent.
 
