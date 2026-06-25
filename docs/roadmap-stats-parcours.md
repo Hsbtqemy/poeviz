@@ -294,6 +294,17 @@ La salience est surtout du **post-traitement** (écarts à la médiane) par-dess
 
 ## T4 — Parcours dirigé : la fiche comme point de départ d'un chemin
 
+> **État : livré.** La fiche liste « Continuer le parcours → » (voisins de la **projection
+> courante** = sauts ; cliquer = saut). Un clic sur un nœud **adjacent** de la carte
+> continue la chaîne, un clic ailleurs la redémarre. **Ruban (fil d'Ariane)** : maillons
+> cliquables (revenir), **‹ Reculer**, **▶ Play** (rejoue pas à pas), **⤓ Texte** (chaîne
+> factuelle + détail de chaque chaînon via `/edge`), **✕**. La chaîne **s'illumine** sur la
+> carte (`NetView.setPath` : arêtes consécutives en rouge, reste estompé). Survol d'une
+> flèche → explication `/edge` (ouvrage commun, sinon intermédiaires). Couplage stats :
+> cliquer une **paire** ouvre un parcours de 2 ; le va-et-vient carte ⇄ stats préserve
+> l'état (la carte est recouverte, pas reconstruite). Parcours et focalisation = modes
+> distincts. **Reste (T5)** : marche aléatoire (parcours au hasard).
+
 **But.** Depuis une fiche, **cheminer de lien en lien** dans le réseau ; l'outil garde la
 trace (fil d'Ariane). « L'idée la plus forte de la session » : unifie *exporter la fiche*,
 *la navigation* et (via T5) *la découverte*.

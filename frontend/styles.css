@@ -352,11 +352,35 @@ table.stab tbody tr:hover{background:#fff}
 .focus-bar .fb-btn{border:1px solid var(--line);background:#fff;border-radius:7px;
   padding:4px 10px;font-size:12px;color:var(--ink);cursor:pointer}
 .focus-bar .fb-btn:hover{background:var(--panel2)}
+/* ruban de parcours (fil d'Ariane) — bas du canvas, à gauche du panneau de détail */
+.parcours-bar{position:absolute;bottom:14px;left:calc((100% - var(--detail-w)) / 2);transform:translateX(-50%);
+  z-index:16;display:flex;align-items:center;gap:10px;max-width:calc(100% - var(--detail-w) - 44px);
+  background:var(--ink);color:#fff;border-radius:10px;padding:7px 12px;box-shadow:0 4px 16px rgba(0,0,0,.2);
+  font-family:system-ui,Arial,sans-serif;font-size:12px}
+.pb-lab{font-size:9px;text-transform:uppercase;letter-spacing:1px;opacity:.65;flex:none}
+.pb-chain{display:flex;align-items:center;gap:4px;overflow-x:auto;flex:1;min-width:0}
+.pb-node{background:rgba(255,255,255,.14);border-radius:6px;padding:2px 8px;cursor:pointer;white-space:nowrap;
+  max-width:160px;overflow:hidden;text-overflow:ellipsis;flex:none}
+.pb-node:hover{background:rgba(255,255,255,.28)}
+.pb-node.head{background:var(--sel)}
+.pb-arrow{opacity:.5;flex:none;cursor:help}
+.pb-arrow:hover{opacity:1}
+.pb-btn{flex:none;background:rgba(255,255,255,.14);border:none;color:#fff;border-radius:6px;cursor:pointer;
+  font-size:11px;padding:3px 8px;font-family:system-ui,Arial,sans-serif}
+.pb-btn:hover{background:rgba(255,255,255,.3)}
 /* bouton « Focaliser » dans la fiche de nœud */
 .focus-btn{width:100%;margin-bottom:10px;border:1px solid var(--sel);background:#fff;color:var(--sel);
   border-radius:8px;padding:7px;font-size:12.5px;font-family:system-ui,Arial,sans-serif;
   font-weight:bold;cursor:pointer}
 .focus-btn:hover{background:var(--sel);color:#fff}
+/* « Continuer le parcours » dans la fiche : voisins cliquables (sauts) */
+.cont-lab{font-size:9.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-weight:bold;
+  font-family:system-ui,Arial,sans-serif;margin:2px 0 6px}
+.cont-chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:13px}
+.cont-chip{background:#fff;border:1px solid var(--line);border-left:3px solid var(--c,#8A857B);
+  border-radius:14px;padding:3px 9px;font-size:11.5px;cursor:pointer}
+.cont-chip:hover{border-color:var(--sel);color:var(--sel)}
+.cont-more{font-size:11px;color:var(--muted);align-self:center}
 
 /* tooltip */
 #tooltip{position:absolute;z-index:30;pointer-events:none;background:var(--ink);color:#fff;

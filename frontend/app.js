@@ -25,6 +25,8 @@
     force: { linLog: false, outbound: false, edgeWeight: 1, groupByCommunity: false },
     simAttract: false, simDims: [], simThreshold: 0.5,   // similarité (T4) : rapprocher les semblables
     focus: null, focusHops: 1, focusTrail: [],           // mode focalisation (ego)
+    parcours: [],                 // chaîne de nœuds (fil d'Ariane) du parcours courant
+    parcoursPlaying: false,       // animation « rejouer le parcours » en cours ?
     showHinge: false,
     degreeMin: 0,                 // filtre « degré minimum » (0 = aucun filtre)
     filterCols: [],               // colonnes filtrables [{col,n_unique,role,is_time}] (/configure)
@@ -72,6 +74,7 @@
    "force-ctrl", "force-linlog", "force-outbound", "force-community", "force-weight", "force-weight-val",
    "sim-ctrl", "sim-attract", "sim-opts", "sim-dims", "sim-threshold", "sim-threshold-val",
    "focus-bar", "focus-label", "focus-depth", "focus-depth-val", "focus-back", "focus-exit",
+   "parcours-bar", "parcours-chain", "parcours-play", "parcours-back", "parcours-text", "parcours-clear",
    "display-mode", "rail-foot",
    "yr-min", "yr-max", "yr-lo", "yr-hi", "yr-reset", "timewrap",
    "tl", "tl-hist", "tl-window", "tl-play", "tl-speed",
@@ -961,6 +964,10 @@
     });
     el["focus-back"].addEventListener("click", focusBack);
     el["focus-exit"].addEventListener("click", exitFocus);
+    el["parcours-play"].addEventListener("click", parcoursPlay);
+    el["parcours-back"].addEventListener("click", parcoursBack);
+    el["parcours-text"].addEventListener("click", parcoursText);
+    el["parcours-clear"].addEventListener("click", deselect);
     // Filtre « degré minimum » : libellé en direct (input), application au relâcher (change).
     // Pas de relayout : les positions restent stables, on masque seulement les nœuds peu reliés.
     el["deg-min"].addEventListener("input", (e) => { el["deg-min-val"].textContent = e.target.value; });
@@ -1101,11 +1108,35 @@
   }
 
   // ------------------------------------------------------------- sélection
-  async function selectNode(id) {
+  async function selectNode(id, opts) {
+    opts = opts || {};
+    stopParcoursPlay();                            // toute interaction interrompt le « rejouer »
     if (State.focus) { enterFocus(id); return; }   // en focalisation : clic = re-focalise
     State.selected = id;
-    NetView.setHighlight(id);
+    // Parcours : un clic sur un VOISIN (dans la projection) continue la chaîne ; un clic
+    // ailleurs démarre un nouveau parcours. Un saut explicite (fiche) continue toujours.
+    const head = State.parcours[State.parcours.length - 1];
+    const continues = opts.fromParcours
+      || (head && head !== id && !State.parcours.includes(id)
+          && projectedNeighbors(head).some((n) => n.id === id));
+    if (continues) State.parcours.push(id);
+    else State.parcours = [id];
+    highlightParcours();
+    updateParcoursBar();
     showDetail(id);
+  }
+
+  // Voisins du nœud DANS la projection courante (les seuls sauts proposés).
+  function projectedNeighbors(id) {
+    const g = State.lastGraph;
+    if (!g) return [];
+    const ids = new Set();
+    g.edges.forEach((e) => { if (e.source === id) ids.add(e.target); else if (e.target === id) ids.add(e.source); });
+    return g.nodes.filter((n) => ids.has(n.id));
+  }
+  function highlightParcours() {
+    if (State.parcours.length >= 2) NetView.setPath(State.parcours);
+    else NetView.setHighlight(State.parcours[0] || null);
   }
 
   async function showDetail(id) {
@@ -1117,10 +1148,118 @@
   }
 
   function deselect() {
+    stopParcoursPlay();
     if (State.focus) { exitFocus(); return; }      // clic sur le fond en focalisation → on sort
     State.selected = null;
+    State.parcours = [];
     NetView.setHighlight(null);
     el["detail"].classList.remove("open");
+    updateParcoursBar();
+  }
+
+  // -------------------------------------------------------------- parcours (T4)
+  function labelOf(id) {
+    const n = (State.lastGraph && State.lastGraph.nodes || []).find((x) => x.id === id);
+    return n ? n.label : id;
+  }
+  // Saut explicite depuis la fiche (voisin de la projection) : continue la chaîne.
+  function parcoursJump(id) { selectNode(id, { fromParcours: true }); NetView.centerOnNodes([id]); }
+  function parcoursBack() {
+    if (State.parcours.length <= 1) { deselect(); return; }
+    State.parcours.pop();
+    goToHead();
+  }
+  function parcoursGoto(idx) {                       // clic sur un maillon → tronque jusqu'à lui
+    if (idx < 0 || idx >= State.parcours.length) return;
+    State.parcours = State.parcours.slice(0, idx + 1);
+    goToHead();
+  }
+  function goToHead() {
+    stopParcoursPlay();
+    const head = State.parcours[State.parcours.length - 1];
+    State.selected = head;
+    highlightParcours(); updateParcoursBar(); showDetail(head); NetView.centerOnNodes([head]);
+  }
+
+  function updateParcoursBar() {
+    const chain = State.parcours;
+    if (chain.length < 2) { el["parcours-bar"].classList.add("hidden"); return; }
+    el["parcours-bar"].classList.remove("hidden");
+    const host = el["parcours-chain"]; host.innerHTML = "";
+    chain.forEach((id, i) => {
+      if (i > 0) {
+        const arr = document.createElement("span");
+        arr.className = "pb-arrow"; arr.textContent = "→"; arr.title = "(survol : pourquoi reliés)";
+        arr.addEventListener("mouseenter", () => explainChainon(chain[i - 1], id, arr), { once: true });
+        host.appendChild(arr);
+      }
+      const chip = document.createElement("span");
+      chip.className = "pb-node" + (i === chain.length - 1 ? " head" : "");
+      chip.textContent = labelOf(id); chip.title = labelOf(id);
+      chip.addEventListener("click", () => parcoursGoto(i));
+      host.appendChild(chip);
+    });
+    host.scrollLeft = host.scrollWidth;              // suit la tête
+  }
+
+  async function edgeExplain(a, b) {
+    const p = new URLSearchParams({ session_id: State.sessionId, source: a, target: b });
+    if (State.yearMin != null) { p.set("year_min", State.yearMin); p.set("year_max", State.yearMax); }
+    const d = await getJSON("/edge?" + p.toString());
+    // L'ouvrage commun est la raison directe ; sinon (lien indirect) on cite les
+    // intermédiaires partagés, limités pour rester lisible.
+    const works = (d.shared_works || []).map((w) => (w && w.label) || w);
+    if (works.length) return `${cap(unitP())} communs : ${works.slice(0, 4).join(" · ")}`;
+    const via = Object.entries(d.shared_via || {}).slice(0, 3).map(([t, arr]) => `${t} : ${arr.join(", ")}`);
+    return via.length ? "Reliés via " + via.join(" ; ") : "Reliés dans la vue courante.";
+  }
+  async function explainChainon(a, b, arrEl) {
+    try { arrEl.title = await edgeExplain(a, b); }
+    catch (e) { arrEl.title = "Explication indisponible."; }
+  }
+
+  // Export texte du parcours : la chaîne factuelle (l'analyste l'interprète).
+  async function parcoursText() {
+    const chain = State.parcours;
+    if (chain.length < 2) return;
+    const lines = ["Parcours", "========", chain.map(labelOf).join("  →  "), ""];
+    for (let i = 0; i + 1 < chain.length; i++) {
+      let detail = "reliés dans la vue courante";
+      try { detail = (await edgeExplain(chain[i], chain[i + 1])).replace(/\n/g, " — "); } catch (e) {}
+      lines.push(`- ${labelOf(chain[i])} → ${labelOf(chain[i + 1])} : ${detail}`);
+    }
+    downloadBlob(new Blob([lines.join("\r\n")], { type: "text/plain;charset=utf-8" }), "parcours.txt");
+  }
+
+  // « Rejouer » : redessine la chaîne pas à pas (centre + surligne chaque maillon),
+  // puis ouvre la fiche d'arrivée. Toute interaction (clic) l'interrompt.
+  function stopParcoursPlay() {
+    State.parcoursPlaying = false;
+    if (el["parcours-play"]) el["parcours-play"].textContent = "▶";
+  }
+  function markPlayStep(i) {
+    el["parcours-chain"].querySelectorAll(".pb-node")
+      .forEach((c, k) => c.classList.toggle("head", k === i));
+  }
+  async function parcoursPlay() {
+    if (State.parcoursPlaying) { stopParcoursPlay(); return; }
+    const chain = State.parcours.slice();
+    if (chain.length < 2) return;
+    State.parcoursPlaying = true;
+    el["parcours-play"].textContent = "⏸";
+    for (let i = 0; i < chain.length; i++) {
+      if (!State.parcoursPlaying) break;
+      NetView.setPath(chain.slice(0, i + 1));
+      NetView.centerOnNodes([chain[i]]);
+      markPlayStep(i);
+      await sleep(1000);
+    }
+    const wasPlaying = State.parcoursPlaying;
+    stopParcoursPlay();
+    if (wasPlaying && State.parcours.length) {          // arrivé au bout sans interruption
+      highlightParcours(); markPlayStep(State.parcours.length - 1);
+      showDetail(State.parcours[State.parcours.length - 1]);
+    }
   }
 
   // ----------------------------------------------------------- focalisation (ego)
@@ -1130,6 +1269,7 @@
   async function enterFocus(id) {
     if (State.focus && State.focus !== id) State.focusTrail.push(State.focus);
     State.focus = id; State.selected = id;
+    State.parcours = []; updateParcoursBar();       // focalisation et parcours = modes distincts
     State.layoutSig = null;
     NetView.setHighlight(null);          // l'ego EST le périmètre → aucun estompage
     updateFocusBar();
@@ -1249,11 +1389,26 @@
         });
       }
     }
+    // Parcours : voisins du nœud DANS la projection courante = les sauts possibles.
+    // Hors focalisation (là, cliquer un voisin re-focalise au lieu de cheminer).
+    let cont = "";
+    if (!State.focus) {
+      const neigh = projectedNeighbors(d.id).filter((n) => !State.parcours.includes(n.id));
+      if (neigh.length) {
+        cont = `<div class="cont-lab">Continuer le parcours →</div><div class="cont-chips">` +
+          neigh.slice(0, 40).map((n) =>
+            `<span class="cont-chip" data-id="${esc(n.id)}" style="--c:${n.color || "#8A857B"}">${esc(n.label)}</span>`).join("") +
+          (neigh.length > 40 ? `<span class="cont-more">+${neigh.length - 40}</span>` : "") +
+          `</div>`;
+      }
+    }
     const focusing = State.focus === d.id;
-    html = `<button class="focus-btn">${focusing ? "✕ Quitter la focalisation" : "🎯 Focaliser sur ce nœud"}</button>` + html;
+    html = `<button class="focus-btn">${focusing ? "✕ Quitter la focalisation" : "🎯 Focaliser sur ce nœud"}</button>` + cont + html;
     el["dbody"].innerHTML = html;
     const fb = el["dbody"].querySelector(".focus-btn");
     if (fb) fb.addEventListener("click", () => (focusing ? exitFocus() : enterFocus(d.id)));
+    el["dbody"].querySelectorAll(".cont-chip").forEach((c) =>
+      c.addEventListener("click", () => parcoursJump(c.dataset.id)));
     el["detail"].classList.add("open");
   }
   function stat(k, v) { return `<div class="stat"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`; }
@@ -1480,14 +1635,28 @@
   }
   function round3(x) { return x == null ? "" : Math.round(x * 1000) / 1000; }
 
+  function areConnected(a, b) {
+    const g = State.lastGraph;
+    return !!g && g.edges.some((e) => (e.source === a && e.target === b) || (e.source === b && e.target === a));
+  }
   function seeOnMap(refs) {
     if (!refs || !refs.length) return;
     closeStats();
     requestAnimationFrame(() => {
-      const inView = State.lastGraph && State.lastGraph.nodes.some((n) => n.id === refs[0]);
-      if (!inView) { flash("Ce nœud est hors de la vue carte courante (filtres / base)."); return; }
-      NetView.centerOnNodes(refs.filter((id) => State.lastGraph.nodes.some((n) => n.id === id)));
-      if (refs.length === 1) selectNode(refs[0]);
+      const g = State.lastGraph;
+      const present = refs.filter((id) => g && g.nodes.some((n) => n.id === id));
+      if (!present.length) { flash("Hors de la vue carte courante (filtres / base)."); return; }
+      NetView.centerOnNodes(present);
+      if (present.length === 1) {
+        selectNode(present[0]);                       // une entité → sa fiche
+      } else if (present.length === 2 && areConnected(present[0], present[1])) {
+        State.parcours = present.slice();             // un duo → parcours de 2 (arête en rouge)
+        State.selected = present[1];
+        highlightParcours(); updateParcoursBar(); showDetail(present[1]);
+      } else {
+        NetView.setFocus(present);                    // un ensemble → mise en évidence groupée
+        State.parcours = [present[0]]; State.selected = present[0]; showDetail(present[0]);
+      }
     });
   }
 
