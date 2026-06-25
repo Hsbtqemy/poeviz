@@ -301,11 +301,13 @@ def build_master_graph(df, roles: dict[str, str], separators: list[str],
     return G, meta
 
 
-# Au-delà de ce nombre de valeurs distinctes, une colonne n'est pas activable comme
-# nœud/connecteur (trop fine, trop lourde) : proposée dans le panneau mais désactivée.
-# (Relevé de 300 à 500 : des entités réelles type « traducteurs » dépassent souvent
-# 300 sur de vraies bases ; les positions/métriques passent désormais à l'échelle.)
-MAX_NODE_VALUES = 500
+# Plafond de valeurs distinctes pour qu'une colonne soit activable comme nœud. Ce
+# n'est plus qu'un garde-fou contre les colonnes pathologiques (des milliers de
+# valeurs quasi-uniques) : les positions/métriques passent désormais à l'échelle, et
+# l'utilité réelle d'une colonne-nœud est jugée par son RATIO d'unicité (drapeau
+# « nœuds isolés » si ratio ≥ 0,9), pas par un compte absolu serré. Des entités réelles
+# (traducteurs, lieux…) dépassent facilement quelques centaines sur de vraies bases.
+MAX_NODE_VALUES = 2000
 
 
 def _col_values(cell, role, separators) -> list[str]:
