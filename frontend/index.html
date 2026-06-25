@@ -294,11 +294,20 @@
     </div>
     <div class="stats-body">
       <section class="stats-block">
-        <div class="grp-label">Ce qui ressort</div>
+        <div class="stats-block-head">
+          <div class="grp-label">Ce qui ressort</div>
+          <button class="btn-mini" id="exp-synth" title="Télécharger la synthèse (texte factuel)">⤓ Synthèse (texte)</button>
+        </div>
         <div id="stats-traits" class="stats-traits"></div>
       </section>
       <section class="stats-block">
-        <div class="grp-label">Explorer par grain</div>
+        <div class="stats-block-head">
+          <div class="grp-label">Explorer par grain</div>
+          <span class="stats-exp">
+            <button class="btn-mini" id="exp-tab-csv" title="Exporter le tableau courant en CSV">⤓ CSV</button>
+            <button class="btn-mini" id="exp-tab-xlsx" title="Exporter le tableau courant en XLSX">⤓ XLSX</button>
+          </span>
+        </div>
         <div class="seg" id="stats-grain">
           <span data-v="entites" class="on">Entités</span><span data-v="paires">Paires</span><span data-v="ensemble">Ensemble</span>
         </div>

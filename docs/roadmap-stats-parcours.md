@@ -362,11 +362,19 @@ fait côté serveur (sinon front pur sur les données de `/graph`).
 
 ## T6 — Synthèse textuelle & exports
 
-> **Déjà livré (hors séquence, lot T0)** : périmètre d'export **« Vue courante, sélection
-> en évidence »** — `render_image` honore une opacité par nœud (`alpha`) et une couleur/opacité
-> par arête, le front les pose en miroir des reducers de `render.js` (sélection + voisinage
-> vifs, reste estompé, arêtes incidentes en rouge). Incarne le §5.3 (cohérence écran↔export).
-> **Reste** : tableaux par grain, graphiques (barres/histogramme/matrice), synthèse texte.
+> **État : partiel.**
+> - *(lot T0)* périmètre d'export **« Vue courante, sélection en évidence »** — `render_image`
+>   honore une opacité par nœud (`alpha`) + couleur/opacité par arête (miroir des reducers de
+>   `render.js`). Incarne le §5.3 (cohérence écran↔export).
+> - **Synthèse texte** des traits saillants : bouton dans la page stats → `synthese-stats.txt`
+>   (phrases factuelles de `/salience` assemblées localement, périmètre + résumé en tête).
+> - **Tableaux par grain** : boutons CSV/XLSX → réutilisent `/export` (metrics / csv_edges) sur
+>   la vue du périmètre stats.
+>
+> **Reste** : **graphiques** (barres top-N, histogramme temporel, matrice de co-occurrence,
+> PNG/SVG matplotlib) ; **glossaire des métriques** — décrire *à terme* ce que mesurent degré,
+> intermédiarité (betweenness), vecteur propre, communautés… pour expliciter les chiffres
+> (info-bulles / page d'aide), afin que ce ne soit pas une boîte noire.
 
 **But.** Sortir les stats et les parcours en **tableaux, images, et texte** — tout **local**.
 

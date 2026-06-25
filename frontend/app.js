@@ -45,6 +45,7 @@
     statsScope: "view",           // périmètre des stats : vue courante | base entière
     statsGrain: "entites",        // onglet d'exploration : entites | paires | ensemble
     statsGraph: null,             // données /graph du périmètre stats courant
+    lastSalience: null,           // dernier /salience (pour l'export texte)
     statsSort: { col: null, dir: -1 },
     lastFocusBeforeStats: null,
     layoutSig: null,
@@ -83,7 +84,8 @@
    "chrono-btn", "chrono-overlay", "chrono-close", "chrono-title", "chrono-sub",
    "chrono-pivot", "chrono-color", "chrono-status", "chrono-scroll",
    "stats-btn", "stats-close", "stats-screen", "stats-scope", "stats-meta",
-   "stats-traits", "stats-grain", "stats-table", "hasard-btn", "hasard-btn-stats"
+   "stats-traits", "stats-grain", "stats-table", "hasard-btn", "hasard-btn-stats",
+   "exp-synth", "exp-tab-csv", "exp-tab-xlsx"
   ].forEach((id) => { el[id] = $(id); });
 
   // Nom de la charnière (« objet / objets » par défaut). cap() capitalise pour
@@ -1298,6 +1300,7 @@
         getJSON(`/graph?${q}`),
       ]);
       State.statsGraph = gdata;
+      State.lastSalience = sal;
       const s = gdata.summary;
       el["stats-meta"].textContent =
         `${s.n_nodes} nœuds · ${s.n_edges} liens · ${s.n_communities} communautés`;
@@ -1500,11 +1503,59 @@
     requestAnimationFrame(() => { NetView.centerOnNodes([pick.id]); selectNode(pick.id); });
   }
 
+  // Synthèse texte : on assemble les phrases factuelles déjà produites par /salience
+  // (gabarits déterministes, généré localement — aucun appel externe).
+  function exportSalienceText() {
+    const sal = State.lastSalience;
+    if (!sal || !(sal.traits || []).length) { flash("Rien à exporter dans la synthèse."); return; }
+    const s = (State.statsGraph && State.statsGraph.summary) || {};
+    const scopeLabel = State.statsScope === "base" ? "base entière" : "vue courante";
+    const lines = [`Statistiques — ${State.filename || ""} (${scopeLabel})`];
+    if (s.n_nodes != null) lines.push(`${s.n_nodes} nœuds · ${s.n_edges} liens · ${s.n_communities} communautés`);
+    lines.push("", "CE QUI RESSORT", "==============", "");
+    const byKind = {};
+    sal.traits.forEach((t) => { (byKind[t.kind] = byKind[t.kind] || []).push(t); });
+    KIND_ORDER.filter((k) => byKind[k])
+      .concat(Object.keys(byKind).filter((k) => !KIND_ORDER.includes(k)))
+      .forEach((kind) => {
+        lines.push(KIND_LABEL[kind] || kind);
+        byKind[kind].forEach((t) => lines.push("  - " + t.detail));
+        lines.push("");
+      });
+    downloadBlob(new Blob([lines.join("\r\n")], { type: "text/plain;charset=utf-8" }), "synthese-stats.txt");
+  }
+
+  // Tableau du grain courant : entités/ensemble → métriques ; paires → arêtes.
+  // On réutilise /export en lui passant la vue du PÉRIMÈTRE stats (State.statsGraph).
+  async function exportStatsTable(format) {
+    const g = State.statsGraph;
+    if (!g) { flash("Rien à exporter."); return; }
+    const paires = State.statsGrain === "paires";
+    const kind = paires ? "csv_edges" : "metrics";
+    const fmt = paires ? "csv" : format;             // pas de XLSX pour les arêtes → CSV
+    if (paires && format === "xlsx") flash("Les paires s'exportent en CSV.");
+    try {
+      const body = {
+        session_id: State.sessionId, kind, format: fmt,
+        view: { nodes: g.nodes, edges: g.edges },
+        title: State.filename, unit_singular: unitS(), unit_plural: unitP(),
+      };
+      const res = await api("/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const blob = await res.blob();
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = cd.match(/filename="?([^"]+)"?/);
+      downloadBlob(blob, m ? m[1] : `stats.${fmt}`);
+    } catch (e) { flash("Échec export : " + e.message); }
+  }
+
   function initStats() {
     el["stats-btn"].addEventListener("click", openStats);
     el["stats-close"].addEventListener("click", closeStats);
     el["hasard-btn"].addEventListener("click", randomDiscover);
     el["hasard-btn-stats"].addEventListener("click", randomDiscover);
+    el["exp-synth"].addEventListener("click", exportSalienceText);
+    el["exp-tab-csv"].addEventListener("click", () => exportStatsTable("csv"));
+    el["exp-tab-xlsx"].addEventListener("click", () => exportStatsTable("xlsx"));
     wireSeg(el["stats-scope"], (v) => { State.statsScope = v; State.statsSort = { col: null, dir: -1 }; loadStats(); });
     wireSeg(el["stats-grain"], (v) => { State.statsGrain = v; State.statsSort = { col: null, dir: -1 }; renderStatsTable(); });
   }
