@@ -52,7 +52,6 @@
    "unit-singular", "unit-preview", "hinge-key",
    "app", "brand-sub", "search", "pivot-list", "layers-list", "hinge-layer", "hinge-label", "reconfig",
    "adv", "adv-toggle", "seg-link", "seg-pivot", "seg-color", "seg-labels",
-   "card-fields", "card-fields-ctrl", "card-fields-note",
    "size-by", "layout-sel", "axes-ctrl", "axis-x", "axis-y", "seg-axis-order",
    "force-ctrl", "force-linlog", "force-outbound", "force-community", "force-weight", "force-weight-val",
    "sim-ctrl", "sim-attract", "sim-opts", "sim-dims", "sim-threshold", "sim-threshold-val",
@@ -338,49 +337,21 @@
     refreshGraph();
   }
 
-  // Champs affichés sur la carte d'un livre (charnière). Réglable à la volée :
-  // c'est purement de l'affichage, les valeurs sont déjà toutes envoyées par /graph.
+  // Champs affichés sur la carte d'une charnière : choisis dans la modale (case « Carte »
+  // par colonne → State.cardFieldsSel). Purement de l'affichage — toutes les valeurs sont
+  // déjà fournies par /cards ; on transmet juste au rendu la liste retenue.
   function buildCardFields() {
     const layers = State.summary.node_layers || [];
     const attrs = State.summary.attr_cols || [];
     const tc = State.summary.time_col;
     const fields = [...layers, ...attrs];
     if (tc && !fields.includes(tc)) fields.push(tc);
-    // Sélection : mémorisée (filtrée aux colonnes encore présentes) si l'utilisateur
-    // a déjà choisi ; sinon défaut adaptatif = entités liées + année (fiche biblio).
-    const sel = State.cardFieldsSel != null
-      ? new Set(State.cardFieldsSel.filter((f) => fields.includes(f)))
-      : new Set([...layers, tc].filter(Boolean));
-    el["card-fields"].innerHTML = "";
-    fields.forEach((f) => {
-      const row = document.createElement("label");
-      row.className = "cf";
-      row.innerHTML = `<input type="checkbox" ${sel.has(f) ? "checked" : ""}> <span>${esc(f)}</span>`;
-      row.querySelector("input").dataset.field = f;
-      row.querySelector("input").addEventListener("change", onCardFieldChange);
-      el["card-fields"].appendChild(row);
-    });
-    syncCardFields();              // applique sans écraser la mémoire
-    updateCardFieldsState();
-  }
-
-  function syncCardFields() {
-    State.cardFields = [...el["card-fields"].querySelectorAll("input")]
-      .filter((i) => i.checked).map((i) => i.dataset.field);
+    // Sélection de la modale (filtrée aux colonnes encore présentes) ; à défaut, défaut
+    // adaptatif = entités liées + année (fiche biblio).
+    State.cardFields = State.cardFieldsSel != null
+      ? State.cardFieldsSel.filter((f) => fields.includes(f))
+      : [...layers, tc].filter(Boolean);
     NetView.setCardFields(State.cardFields);
-  }
-
-  function onCardFieldChange() {
-    syncCardFields();
-    State.cardFieldsSel = State.cardFields.slice();   // mémorise le choix de l'utilisateur
-  }
-
-  // La carte d'un livre n'apparaît que si la charnière est affichée → on grise
-  // le contrôle (et on explique) tant que ce n'est pas le cas.
-  function updateCardFieldsState() {
-    const on = !!State.showHinge;
-    el["card-fields"].classList.toggle("inactive", !on);
-    if (el["card-fields-note"]) el["card-fields-note"].classList.toggle("show", !on);
   }
 
   // ------------------------------------------------------------- pivot & couches
@@ -544,7 +515,6 @@
     el["hinge-layer"].onclick = () => {
       State.showHinge = !State.showHinge;
       el["hinge-layer"].classList.toggle("off", !State.showHinge);
-      updateCardFieldsState();
       if (State.showHinge) ensureCardData();   // 1re activation → charge les cartes
       refreshGraph();
     };
