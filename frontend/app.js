@@ -308,6 +308,7 @@
       window.__netInit = true;
       window.addEventListener("resize", () => {
         NetView.resize();
+        syncTopbarHeight();
         if (State.fullYearMin != null) { drawHistogram(); positionWindow(); }
       });
     }
@@ -333,6 +334,7 @@
     buildCardFields();
     buildTimeline();
     toggleTemporalUI(State.fullYearMin != null);
+    syncTopbarHeight();   // barre figée → la fiche démarre dessous (Exporter reste cliquable)
     el["rail-foot"].textContent =
       `${State.summary.n_works} ${unitP()} · ${State.summary.n_nodes_total} entités`;
     refreshGraph();
@@ -355,9 +357,28 @@
     NetView.setCardFields(State.cardFields);
   }
 
+  // Hauteur réelle de la barre supérieure → la fiche (.detail) démarre dessous,
+  // sinon elle recouvre le bouton Exporter (et son propre bouton de fermeture).
+  function syncTopbarHeight() {
+    const tb = document.querySelector(".topbar");
+    if (tb && tb.offsetHeight) document.documentElement.style.setProperty("--topbar-h", tb.offsetHeight + "px");
+  }
+
   // ------------------------------------------------------------- pivot & couches
+  // Types actuellement *affichés* (rôle nœud d'origine OU promus via la lentille),
+  // dans l'ordre des colonnes. Le pivot se construit là-dessus, pas sur la liste
+  // figée à la configuration → il suit les changements de couches à la volée.
+  function shownNodeTypes() {
+    return (State.summary.layer_cols || [])
+      .map((L) => L.col)
+      .filter((c) => State.layersOn.has(c));
+  }
+
   function buildPivotList() {
     el["pivot-list"].innerHTML = "";
+    const types = shownNodeTypes();
+    // Si le pivot courant n'est plus affiché, on retombe proprement sur « aucun ».
+    if (State.pivot && !types.includes(State.pivot)) State.pivot = null;
     const mk = (label, value) => {
       const b = document.createElement("button");
       b.innerHTML = `<span class="pin"></span>${esc(label)}`;
@@ -366,7 +387,7 @@
       return b;
     };
     el["pivot-list"].appendChild(mk("Aucun (force libre)", null));
-    State.summary.node_layers.forEach((t) => el["pivot-list"].appendChild(mk(t, t)));
+    types.forEach((t) => el["pivot-list"].appendChild(mk(t, t)));
   }
 
   // Disposition « axes » : peuple les sélecteurs X/Y depuis les colonnes activables.
@@ -457,10 +478,7 @@
 
   function setPivot(value) {
     State.pivot = value;
-    el["pivot-list"].querySelectorAll("button").forEach((b, i) => {
-      const v = i === 0 ? null : State.summary.node_layers[i - 1];
-      b.classList.toggle("on", v === value);
-    });
+    buildPivotList();                       // repeint selon les couches affichées
     refreshGraph({ pivotChanged: true });
   }
 
@@ -508,7 +526,11 @@
       row.title = L.warn
         ? "Quasi-unique : « affiché » donne des nœuds isolés. Clic : affiché → relie → masqué"
         : "Cliquer pour cycler : affiché → relie (lentille) → masqué";
-      row.addEventListener("click", () => { cycleLayer(t); paint(); refreshGraph(); });
+      row.addEventListener("click", () => {
+        cycleLayer(t); paint();
+        buildPivotList();                   // la couche change → « organiser autour de » suit
+        refreshGraph();
+      });
       paint();
       el["layers-list"].appendChild(row);
     });
@@ -1024,15 +1046,44 @@
       b.addEventListener("click", () => doExport(b.dataset.exp, b.dataset.fmt || "csv")));
   }
 
+  // Couleurs de surlignage — identiques aux reducers de render.js (cohérence écran↔export).
+  const EXP_EDGE_HOT = "#B8453F";     // arête incidente à la sélection
+  const EXP_FADE = 0.16;              // opacité du « fond » estompé
+
   function currentView() {
-    let idFilter = null;
-    if (el["exp-scope"].value === "neighbors" && State.selected) {
-      idFilter = NetView.neighborhood(State.selected, +el["exp-hops"].value);
+    const scope = el["exp-scope"].value;
+    // Voisinage : on RECADRE sur le nœud + ses voisins (le reste est jeté).
+    if (scope === "neighbors" && State.selected) {
+      const idFilter = NetView.neighborhood(State.selected, +el["exp-hops"].value);
+      return { nodes: NetView.getViewNodes(idFilter), edges: NetView.getViewEdges(idFilter) };
     }
-    return { nodes: NetView.getViewNodes(idFilter), edges: NetView.getViewEdges(idFilter) };
+    // Sélection en évidence : on garde TOUT le graphe, mais on met la sélection (+ voisinage)
+    // en avant et on estompe le reste — exactement comme à l'écran après un clic.
+    if (scope === "highlight" && State.selected) {
+      const sel = State.selected;
+      const hl = NetView.neighborhood(sel, +el["exp-hops"].value);
+      const nodes = NetView.getViewNodes(null).map((n) => ({
+        ...n,
+        alpha: hl.has(n.id) ? 1 : EXP_FADE,
+        selected: n.id === sel || undefined,        // toujours étiqueté
+      }));
+      const edges = NetView.getViewEdges(null).map((e) => {
+        const hot = e.source === sel || e.target === sel;        // rouge, comme EDGE_HOT
+        const inSet = hl.has(e.source) && hl.has(e.target);
+        return { ...e, color: hot ? EXP_EDGE_HOT : undefined, alpha: (hot || inSet) ? 1 : EXP_FADE };
+      });
+      return { nodes, edges };
+    }
+    return { nodes: NetView.getViewNodes(null), edges: NetView.getViewEdges(null) };
   }
 
   async function doExport(kind, format) {
+    // Les périmètres « voisinage » et « sélection en évidence » exigent une sélection.
+    const scope = el["exp-scope"].value;
+    if (kind === "image" && (scope === "neighbors" || scope === "highlight") && !State.selected) {
+      el["exp-status"].textContent = "Sélectionnez d'abord un nœud (clic sur la carte).";
+      return;
+    }
     el["exp-status"].innerHTML = `<span class="spinner"></span> Préparation…`;
     try {
       const body = {
@@ -1050,7 +1101,12 @@
       const cd = res.headers.get("Content-Disposition") || "";
       const m = cd.match(/filename="?([^"]+)"?/);
       downloadBlob(blob, m ? m[1] : `cartographie.${format}`);
-      el["exp-status"].textContent = "Téléchargé ✓";
+      // Confirme le périmètre réellement appliqué (aide au diagnostic).
+      const note = (kind === "image" && scope === "highlight" && State.selected)
+          ? " — sélection en évidence" :
+        (kind === "image" && scope === "neighbors" && State.selected)
+          ? " — voisinage recadré" : "";
+      el["exp-status"].textContent = "Téléchargé ✓" + note;
     } catch (e) { el["exp-status"].textContent = "Échec : " + e.message; }
   }
 

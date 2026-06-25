@@ -53,24 +53,39 @@ def render_image(nodes: list[dict[str, Any]], edges: list[dict[str, Any]],
 
     pos = {n["id"]: (n["x"], n["y"]) for n in nodes}
 
-    # Arêtes (épaisseur ∝ poids, plafonnée).
+    # Arêtes (épaisseur ∝ poids, plafonnée). Couleur/opacité par arête si fournies
+    # (mode « sélection en évidence ») ; sinon gris uniforme — rendu inchangé.
     for e in edges:
         if e["source"] in pos and e["target"] in pos:
             x0, y0 = pos[e["source"]]
             x1, y1 = pos[e["target"]]
             lw = min(0.4 + 0.35 * float(e.get("weight", 1)), 3.0)
-            ax.plot([x0, x1], [y0, y1], color=EDGE_COLOR, linewidth=lw,
-                    zorder=1, solid_capstyle="round")
+            a = float(e.get("alpha", 1.0))
+            ax.plot([x0, x1], [y0, y1], color=e.get("color") or EDGE_COLOR,
+                    alpha=a, linewidth=lw, zorder=(1.0 if a >= 1 else 0.5),
+                    solid_capstyle="round")
 
-    # Nœuds.
+    # Nœuds — opacité par nœud (mode « sélection en évidence »). On dessine le fond
+    # estompé d'abord, puis les nœuds pleins au-dessus pour qu'ils ressortent.
     xs = [n["x"] for n in nodes]
     ys = [n["y"] for n in nodes]
-    colors = [n.get("color", "#7B5BD6") for n in nodes]
-    sizes = [(float(n.get("size", 6)) ** 2) * 1.6 for n in nodes]
-    ax.scatter(xs, ys, s=sizes, c=colors, edgecolors="white",
-               linewidths=0.8, zorder=2)
 
-    # Étiquettes selon le mode demandé.
+    def _draw_nodes(group: list[dict], z: float) -> None:
+        if not group:
+            return
+        ax.scatter(
+            [n["x"] for n in group], [n["y"] for n in group],
+            s=[(float(n.get("size", 6)) ** 2) * 1.6 for n in group],
+            c=[_rgba(n.get("color", "#7B5BD6"), float(n.get("alpha", 1.0))) for n in group],
+            edgecolors=[(1, 1, 1, float(n.get("alpha", 1.0))) for n in group],
+            linewidths=0.8, zorder=z)
+
+    faded = [n for n in nodes if float(n.get("alpha", 1.0)) < 1]
+    solid = [n for n in nodes if float(n.get("alpha", 1.0)) >= 1]
+    _draw_nodes(faded, 2.0)
+    _draw_nodes(solid, 2.6)
+
+    # Étiquettes selon le mode demandé (les nœuds estompés ne sont pas étiquetés).
     for n in _labelled_nodes(nodes, labels):
         ax.annotate(n.get("label", ""), (n["x"], n["y"]),
                     xytext=(0, -9), textcoords="offset points",
@@ -232,17 +247,42 @@ def render_chronology(chrono: dict[str, Any], fmt: str = "png",
 
 
 def _labelled_nodes(nodes: list[dict], labels: str) -> list[dict]:
+    # En mode « sélection en évidence », les nœuds estompés (alpha < 1) ne sont pas
+    # étiquetés — comme à l'écran ; le nœud sélectionné l'est toujours. Sans champ
+    # `alpha`/`selected` (export normal), `visible` = tous les nœuds → rendu inchangé.
+    visible = [n for n in nodes if float(n.get("alpha", 1.0)) >= 1]
+    forced = [n for n in nodes if n.get("selected") and n.get("label")]
     if labels == "none":
-        return []
+        return forced
     if labels == "all":
-        return [n for n in nodes if n.get("label")]
-    # "pivots" : on étiquette les plus gros nœuds (top ~20 %).
-    labelled = [n for n in nodes if n.get("label")]
+        return _union(forced, [n for n in visible if n.get("label")])
+    # "pivots" : on étiquette les plus gros nœuds visibles (top ~20 %) + la sélection.
+    labelled = [n for n in visible if n.get("label")]
     if not labelled:
-        return []
+        return forced
     labelled.sort(key=lambda n: float(n.get("size", 0)), reverse=True)
     cutoff = max(1, int(len(labelled) * 0.2))
-    return labelled[:cutoff]
+    return _union(forced, labelled[:cutoff])
+
+
+def _union(first: list[dict], rest: list[dict]) -> list[dict]:
+    """Concatène en dédupliquant par `id`, `first` prioritaire et en tête."""
+    seen = {n.get("id") for n in first}
+    out = list(first)
+    for n in rest:
+        if n.get("id") not in seen:
+            out.append(n)
+            seen.add(n.get("id"))
+    return out
+
+
+def _rgba(hex_color: str, alpha: float = 1.0) -> tuple[float, float, float, float]:
+    """Hex (#RRGGBB) + opacité → tuple RGBA flottant (pour une opacité par nœud)."""
+    h = (hex_color or "").lstrip("#")
+    if len(h) != 6:
+        h = "7B5BD6"
+    return (int(h[0:2], 16) / 255, int(h[2:4], 16) / 255, int(h[4:6], 16) / 255,
+            max(0.0, min(1.0, alpha)))
 
 
 def _draw_time_axis(ax, ta: dict[str, Any]) -> None:

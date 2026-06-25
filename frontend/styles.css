@@ -289,7 +289,7 @@ button{font-family:inherit;cursor:pointer}
 /* detail panel — superposé (overlay) : ne réserve PAS de largeur quand il est
    fermé, sinon le canvas serait rétréci en permanence (bande morte à droite).
    Il glisse par-dessus le bord droit du canvas à l'ouverture. */
-.detail{position:absolute;right:0;top:0;bottom:0;width:var(--detail-w);z-index:20;
+.detail{position:absolute;right:0;top:var(--topbar-h,52px);bottom:0;width:var(--detail-w);z-index:20;
   background:var(--panel);border-left:1px solid var(--line);box-shadow:-4px 0 16px rgba(0,0,0,.06);
   overflow-y:auto;transform:translateX(100%);transition:transform .22s ease}
 .detail.open{transform:translateX(0)}
