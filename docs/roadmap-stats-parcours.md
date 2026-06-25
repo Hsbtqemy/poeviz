@@ -136,12 +136,17 @@ reste, peu coûteux → à faire en premier (frustration immédiate levée).
 
 > **État : livré.** Deux filtres au niveau projection, dans la signature de cache, sans
 > relayout (positions stables) : **degré minimum** (`ProjectionParams.degree_min` +
-> `graph.filter_min_degree`, une passe sans cascade) et **facettes par attribut**
-> (`ProjectionParams.facets` + `graph.facet_options`/`works_passing_facets` ; colonnes
-> attribut à faible cardinalité, hors colonne temps ; OR dans une colonne, ET entre
-> colonnes). Front : section « Filtres » (curseur + groupes repliables de cases). Param
-> `/graph` : `degree_min`, `facets` (JSON). Exposé via `summary.facets` à `/configure`.
-> Couvert par `test_filter_min_degree_hides_low_degree` et `test_facets_filter_by_attribute_value`.
+> `graph.filter_min_degree`, une passe sans cascade) et **facettes** sur **toute colonne
+> activable** (nœud, attribut, titre — pas seulement les attributs), via
+> `ProjectionParams.facets` + `graph.works_passing_facets` (OR dans une colonne, ET entre
+> colonnes ; moteur générique). Les colonnes filtrables sont listées par
+> `graph.filter_columns` (`summary.filter_cols`) ; leurs **valeurs se chargent à la
+> demande** via `GET /facet-values` (`graph.column_values`, plafonné `FACET_VALUES_CAP`).
+> Front : **volet de filtres dédié refermable** (bouton « Filtrer par valeurs » + pastille
+> de compte), un groupe repliable par colonne avec **recherche**, **tout/aucun**, et un
+> **Réinitialiser** global ; le degré min reste dans la sidebar. Param `/graph` :
+> `degree_min`, `facets` (JSON). Couvert par `test_filter_min_degree_hides_low_degree`
+> et `test_facets_filter_by_attribute_value` (filtre aussi une colonne nœud).
 
 **But.** Un **filtrage par contenu**, construit là où il doit l'être — dans la
 **projection**, pas dans la carte — pour que **carte, stats et parcours** lisent le

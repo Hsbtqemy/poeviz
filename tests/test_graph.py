@@ -87,8 +87,8 @@ def test_filter_min_degree_hides_low_degree():
 
 
 def test_facets_filter_by_attribute_value():
-    """Facettes : ne garde que les charnières reliées à une valeur cochée. Seules les
-    colonnes-attribut à faible cardinalité sont facettables (pas les nœuds ni le titre)."""
+    """Facettes : ne garde que les charnières reliées à une valeur cochée. TOUTE colonne
+    activable est filtrable (nœuds compris) ; les valeurs se chargent par colonne."""
     df = pd.DataFrame({
         "Titre": ["T1", "T2", "T3"],
         "Auteur": ["A", "B", "C"],
@@ -96,16 +96,21 @@ def test_facets_filter_by_attribute_value():
     })
     roles = {"Titre": "edge", "Auteur": "node", "Genre": "attribute"}
     G, meta = graph.build_master_graph(df, roles, SEP)
-    opts = graph.facet_options(G, meta)
-    assert set(opts.get("Genre", [])) == {"Roman", "Essai"}
-    assert "Auteur" not in opts and "Titre" not in opts     # nœud / lien non facettables
+    cols = {c["col"] for c in graph.filter_columns(meta)}
+    assert {"Genre", "Auteur", "Titre"} <= cols              # toute colonne activable filtrable
+    vals, trunc = graph.column_values(G, "Genre")
+    assert not trunc
+    assert {v["value"]: v["count"] for v in vals} == {"Roman": 2, "Essai": 1}   # occurrences
     # Genre=Roman → seuls A et B restent (C est en Essai, sa charnière devient inactive)
     P = graph.project(G, meta, graph.ProjectionParams(facets={"Genre": ["Roman"]}))
     assert "Auteur::A" in P and "Auteur::B" in P
     assert "Auteur::C" not in P
-    # None / sélection vide = aucun filtre
+    # filtrer sur une colonne NŒUD marche aussi (le moteur est générique)
+    P2 = graph.project(G, meta, graph.ProjectionParams(facets={"Auteur": ["A"]}))
+    assert "Auteur::A" in P2 and "Auteur::B" not in P2
+    # « coché = gardé » : tout décoché (liste vide) = rien gardé ; None = aucun filtre
     assert graph.works_passing_facets(G, None) is None
-    assert graph.works_passing_facets(G, {"Genre": []}) is None
+    assert graph.works_passing_facets(G, {"Genre": []}) == set()
 
 
 def test_hinge_key_merges_rows():

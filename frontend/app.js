@@ -27,6 +27,11 @@
     focus: null, focusHops: 1, focusTrail: [],           // mode focalisation (ego)
     showHinge: false,
     degreeMin: 0,                 // filtre « degré minimum » (0 = aucun filtre)
+    filterCols: [],               // colonnes filtrables [{col,n_unique,role,is_time}] (/configure)
+    facetValues: {},              // {colonne: [valeurs]} — chargé à la demande (/facet-values)
+    facetCounts: {},              // {colonne: {valeur: occurrences}}
+    facetSort: {},                // {colonne: "alpha"|"count"} — tri des valeurs
+    facetTrunc: {},               // {colonne: bool} — liste tronquée (quasi-unique)
     facets: {},                   // {colonne: Set(valeurs cochées)} ; tout coché = pas de filtre
     yearMin: null, yearMax: null,
     fullYearMin: null, fullYearMax: null,
@@ -53,7 +58,8 @@
    "roles-overlay", "roles-body", "roles-hint", "roles-build", "roles-cancel", "roles-status",
    "unit-singular", "unit-preview", "hinge-key",
    "app", "brand-sub", "search", "pivot-list", "layers-list", "hinge-layer", "hinge-label", "reconfig",
-   "deg-min", "deg-min-val", "facets-ctrl", "facets-list",
+   "deg-min", "deg-min-val", "open-filters", "filters-count",
+   "filters-panel", "fp-reset", "fp-close", "fp-cols",
    "adv", "adv-toggle", "seg-link", "seg-pivot", "seg-color", "seg-labels",
    "size-by", "layout-sel", "axes-ctrl", "axis-x", "axis-y", "seg-axis-order",
    "force-ctrl", "force-linlog", "force-outbound", "force-community", "force-weight", "force-weight-val",
@@ -334,7 +340,7 @@
 
     buildPivotList();
     buildLayers();
-    buildFacets();
+    buildFilterPanel();
     buildAxisControls();
     buildSimControls();
     buildCardFields();
@@ -549,47 +555,182 @@
     };
   }
 
-  // ----------------------------------------------------------- facettes (filtres)
-  // Cases par valeur pour les colonnes-attribut à faible cardinalité (fournies par
-  // /configure dans summary.facets). Tout coché = pas de filtre ; un sous-ensemble
-  // strict ne garde que les objets reliés à une valeur cochée (OR dans la colonne).
-  function buildFacets() {
-    const facets = (State.summary && State.summary.facets) || {};
-    const cols = Object.keys(facets);
-    el["facets-ctrl"].style.display = cols.length ? "" : "none";
-    el["facets-list"].innerHTML = "";
-    State.facets = {};
-    cols.forEach((col) => {
-      const values = facets[col];
-      State.facets[col] = new Set(values);          // tout coché au départ
-      const det = document.createElement("details");
-      det.className = "facet-group";
-      const sum = document.createElement("summary");
-      sum.textContent = col;
-      det.appendChild(sum);
-      const box = document.createElement("div");
-      box.className = "facet-values";
-      values.forEach((v) => {
-        const lab = document.createElement("label");
-        lab.className = "chk";
-        const inp = document.createElement("input");
-        inp.type = "checkbox"; inp.checked = true;
-        inp.addEventListener("change", () => {
-          if (inp.checked) State.facets[col].add(v); else State.facets[col].delete(v);
-          updateFacetSummary(col, sum, values.length);
-          refreshGraph();
-        });
-        lab.appendChild(inp);
-        lab.appendChild(document.createTextNode(" " + v));
-        box.appendChild(lab);
+  // ------------------------------------------------------ volet de filtres (facettes)
+  // Toute colonne activable est filtrable. Les valeurs se chargent à la demande (quand
+  // on déplie une colonne). Tout coché = pas de filtre ; un sous-ensemble strict ne garde
+  // que les objets reliés à une valeur cochée (OR dans la colonne, ET entre colonnes).
+  function buildFilterPanel() {
+    State.filterCols = (State.summary && State.summary.filter_cols) || [];
+    State.facetValues = {}; State.facetCounts = {}; State.facetSort = {};
+    State.facetTrunc = {}; State.facets = {};
+    el["fp-cols"].innerHTML = "";
+    State.filterCols.forEach((c) => el["fp-cols"].appendChild(makeFacetGroup(c)));
+    updateFilterCount();
+  }
+
+  // Un groupe repliable par colonne. Les valeurs (cases) ne se chargent qu'au 1er dépli.
+  function makeFacetGroup(c) {
+    const col = c.col;
+    const det = document.createElement("details");
+    det.className = "facet-group";
+    det.innerHTML =
+      `<summary><span class="fg-name">${esc(col)}</span>` +
+      `<span class="fg-meta">${c.n_unique}${c.is_time ? " · temps" : ""}</span>` +
+      `<span class="fg-count" data-col="${esc(col)}"></span></summary>` +
+      `<div class="fg-load">…</div>`;
+    det.addEventListener("toggle", () => {
+      if (det.open && !State.facetValues[col]) loadFacetValues(col, det);
+    }, { once: false });
+    return det;
+  }
+
+  async function loadFacetValues(col, det) {
+    const body = det.querySelector(".fg-load");
+    try {
+      const r = await getJSON(`/facet-values?session_id=${encodeURIComponent(State.sessionId)}&col=${encodeURIComponent(col)}`);
+      const items = r.values || [];                 // [{value, count}]
+      State.facetValues[col] = items.map((it) => it.value);
+      State.facetCounts[col] = {};
+      items.forEach((it) => { State.facetCounts[col][it.value] = it.count; });
+      State.facetTrunc[col] = !!r.truncated;
+      if (!State.facetSort[col]) State.facetSort[col] = "alpha";
+      if (!State.facets[col]) State.facets[col] = new Set(State.facetValues[col]);  // tout coché
+      renderFacetValues(col, det, body);
+    } catch (e) { body.textContent = "Erreur : " + e.message; }
+  }
+
+  function renderFacetValues(col, det, container) {
+    const values = State.facetValues[col];
+    container.className = "fg-content";
+    container.innerHTML =
+      `<div class="fg-tools">` +
+      (values.length > 8 ? `<input class="fg-search" placeholder="Rechercher…">` : "") +
+      `<button class="fg-all" type="button">Tout</button>` +
+      `<button class="fg-none" type="button">Aucun</button>` +
+      `<select class="fg-sort" title="Trier les valeurs"><option value="alpha">A→Z</option><option value="count">Nb&nbsp;↓</option></select>` +
+      `</div>` +
+      (State.facetTrunc[col] ? `<div class="fg-trunc">${values.length} valeurs les plus fréquentes — affine par la recherche.</div>` : "") +
+      `<div class="facet-values"></div>`;
+    const box = container.querySelector(".facet-values");
+    fillFacetValueList(col, det, box);
+    const sortSel = container.querySelector(".fg-sort");
+    sortSel.value = State.facetSort[col] || "alpha";
+    sortSel.addEventListener("change", () => {
+      State.facetSort[col] = sortSel.value;
+      fillFacetValueList(col, det, box);
+      applyFacetSearch(container, box);
+    });
+    const search = container.querySelector(".fg-search");
+    if (search) search.addEventListener("input", () => applyFacetSearch(container, box));
+    container.querySelector(".fg-all").addEventListener("click", () => setFacetAll(col, det, true));
+    container.querySelector(".fg-none").addEventListener("click", () => setFacetAll(col, det, false));
+    updateFacetGroupCount(col, det);
+  }
+
+  // (Re)construit la liste de cases dans l'ordre de tri courant (alpha / occurrences).
+  function fillFacetValueList(col, det, box) {
+    const counts = State.facetCounts[col] || {};
+    const checked = State.facets[col];
+    const order = [...State.facetValues[col]];
+    if ((State.facetSort[col] || "alpha") === "count")
+      order.sort((a, b) => (counts[b] || 0) - (counts[a] || 0) || a.localeCompare(b));
+    else
+      order.sort((a, b) => a.localeCompare(b));
+    box.innerHTML = "";
+    order.forEach((v) => {
+      const lab = document.createElement("label");
+      lab.className = "chk"; lab.dataset.v = v.toLowerCase();
+      const inp = document.createElement("input");
+      inp.type = "checkbox"; inp.checked = checked.has(v);
+      inp.addEventListener("change", () => {
+        if (inp.checked) checked.add(v); else checked.delete(v);
+        onFacetChange(col, det);
       });
-      det.appendChild(box);
-      el["facets-list"].appendChild(det);
+      const name = document.createElement("span");
+      name.className = "fg-vlabel"; name.textContent = v;
+      const cnt = document.createElement("span");
+      cnt.className = "fg-vcount"; cnt.textContent = counts[v] != null ? counts[v] : "";
+      lab.append(inp, name, cnt);
+      box.appendChild(lab);
     });
   }
-  function updateFacetSummary(col, sumEl, total) {
-    const n = State.facets[col].size;
-    sumEl.textContent = (n > 0 && n < total) ? `${col} · ${n}/${total}` : col;
+
+  function applyFacetSearch(container, box) {
+    const search = container.querySelector(".fg-search");
+    const q = search ? search.value.trim().toLowerCase() : "";
+    box.querySelectorAll("label").forEach((l) => {
+      l.style.display = (!q || l.dataset.v.includes(q)) ? "" : "none";
+    });
+  }
+
+  function setFacetAll(col, det, on) {
+    // Muter le MÊME Set (ne pas le remplacer) : les cases individuelles gardent une
+    // référence vers lui. Le remplacer les « orphelinerait » → leurs clics ne
+    // toucheraient plus l'état lu par la requête (la vue ne bougerait plus).
+    const checked = State.facets[col];
+    checked.clear();
+    if (on) State.facetValues[col].forEach((v) => checked.add(v));
+    det.querySelectorAll(".facet-values input").forEach((inp) => { inp.checked = on; });
+    onFacetChange(col, det);
+  }
+
+  // Mise à jour LIVE de la carte (pas de bouton « Appliquer »), avec anti-rebond pour
+  // coalescer les clics rapides — la carte reste visible (volet non-modal) et se recompose.
+  let filterRefreshTimer = null;
+  function scheduleFilterRefresh() {
+    clearTimeout(filterRefreshTimer);
+    filterRefreshTimer = setTimeout(() => refreshGraph(), 180);
+  }
+  function onFacetChange(col, det) {
+    updateFacetGroupCount(col, det);
+    updateFilterCount();
+    scheduleFilterRefresh();
+  }
+
+  // Une colonne « filtre activement » dès qu'elle n'est PAS entièrement cochée (y compris
+  // tout décoché → rien gardé). Tout coché = pas de contrainte.
+  function facetIsActive(col) {
+    const vals = State.facetValues[col]; const checked = State.facets[col];
+    return !!(vals && checked && checked.size < vals.length);
+  }
+  function updateFacetGroupCount(col, det) {
+    const badge = det.querySelector(".fg-count");
+    const vals = State.facetValues[col] || [];
+    badge.textContent = facetIsActive(col) ? `${State.facets[col].size}/${vals.length}` : "";
+  }
+  function activeFacetCount() {
+    return Object.keys(State.facets).filter(facetIsActive).length;
+  }
+  function updateFilterCount() {
+    const n = activeFacetCount();
+    el["filters-count"].textContent = n ? String(n) : "";
+    el["filters-count"].classList.toggle("on", n > 0);
+  }
+
+  function filtersOpen() { return el["filters-panel"].classList.contains("open"); }
+  function toggleFilters() { filtersOpen() ? closeFilters() : openFilters(); }
+  function openFilters() {
+    el["filters-panel"].classList.add("open");
+    el["filters-panel"].setAttribute("aria-hidden", "false");
+  }
+  function closeFilters() {
+    el["filters-panel"].classList.remove("open");
+    el["filters-panel"].setAttribute("aria-hidden", "true");
+  }
+  function resetFilters() {
+    // Recoche tout partout (en MUTANT les Set existants, cf. setFacetAll) → plus aucun filtre.
+    Object.keys(State.facets).forEach((col) => {
+      const checked = State.facets[col];
+      checked.clear();
+      (State.facetValues[col] || []).forEach((v) => checked.add(v));
+    });
+    el["fp-cols"].querySelectorAll("details.facet-group").forEach((det) => {
+      det.querySelectorAll(".facet-values input").forEach((inp) => { inp.checked = true; });
+      const col = det.querySelector(".fg-count")?.dataset.col;
+      if (col) updateFacetGroupCount(col, det);
+    });
+    updateFilterCount();
+    scheduleFilterRefresh();
   }
 
   // --------------------------------------------------------------- timeline
@@ -813,6 +954,11 @@
     // Pas de relayout : les positions restent stables, on masque seulement les nœuds peu reliés.
     el["deg-min"].addEventListener("input", (e) => { el["deg-min-val"].textContent = e.target.value; });
     el["deg-min"].addEventListener("change", (e) => { State.degreeMin = +e.target.value; refreshGraph(); });
+    // Volet de filtres (toute colonne) — non-modal : la carte reste active à côté.
+    el["open-filters"].addEventListener("click", toggleFilters);
+    el["fp-close"].addEventListener("click", closeFilters);
+    el["fp-reset"].addEventListener("click", resetFilters);
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && filtersOpen()) closeFilters(); });
     el["search"].addEventListener("input", (e) => { State.search = e.target.value; NetView.applySearch(e.target.value); });
     el["dclose"].addEventListener("click", deselect);
     el["share-btn"].addEventListener("click", shareStub);
@@ -848,12 +994,11 @@
     if (State.yearMin != null) { p.set("year_min", State.yearMin); p.set("year_max", State.yearMax); }
     if (State.focus) { p.set("focus", State.focus); p.set("hops", State.focusHops); }   // focalisation (ego)
     if (State.degreeMin > 0) p.set("degree_min", State.degreeMin);                       // filtre degré min
-    // Facettes : on n'envoie qu'un sous-ensemble STRICT et non vide (sinon = pas de filtre).
+    // Facettes : on n'envoie une colonne que si elle n'est pas entièrement cochée
+    // (liste possiblement vide = tout décoché = rien gardé). Tout coché = pas de filtre.
     const facetObj = {};
     Object.keys(State.facets || {}).forEach((col) => {
-      const checked = State.facets[col];
-      const total = ((State.summary.facets || {})[col] || []).length;
-      if (checked.size > 0 && checked.size < total) facetObj[col] = [...checked];
+      if (facetIsActive(col)) facetObj[col] = [...State.facets[col]];
     });
     if (Object.keys(facetObj).length) p.set("facets", JSON.stringify(facetObj));
     return p.toString();

@@ -443,39 +443,49 @@ def ego_nodes(P: nx.Graph, focus: str, hops: int) -> set[str]:
     return seen
 
 
-# Cardinalité max d'une colonne pour proposer un filtre par facettes (au-delà, trop de
-# cases à cocher → on ne propose pas ; le filtrage ciblé passe par la recherche/le pivot).
-FACET_MAX_VALUES = 30
+# Plafond de valeurs renvoyées par /facet-values. Au-delà, on tronque et on invite à
+# affiner par la recherche — une colonne quasi-unique reste filtrable, sans tout lister.
+FACET_VALUES_CAP = 800
 
 
-def facet_options(G: nx.Graph, meta: "MasterMeta",
-                  max_values: int = FACET_MAX_VALUES) -> dict[str, list[str]]:
-    """Valeurs cochables par colonne pour le filtrage par facettes. Seules les colonnes
-    en rôle **attribut** (métadonnées descriptives : genre, langue, lieu…) à FAIBLE
-    cardinalité ; on exclut la colonne temporelle (gérée par le curseur d'années) et les
-    colonnes nœud/lien (qu'on cible via la recherche/le pivot). Valeurs = labels des
-    entités de ce type dans le maître (toute colonne activable a ses nœuds)."""
-    facetable = {l["col"] for l in meta.layer_cols
-                 if l.get("role") == ROLE_ATTRIBUTE and l["col"] != meta.time_col
-                 and l.get("activable") and 2 <= int(l.get("n_unique", 0)) <= max_values}
-    out: dict[str, set] = {c: set() for c in facetable}
-    for _, d in G.nodes(data=True):
-        if d.get("kind") == "entity" and d.get("type") in facetable:
-            out[d["type"]].add(d.get("label"))
-    return {c: sorted(v for v in vals if v is not None)
-            for c, vals in out.items() if vals}
+def filter_columns(meta: "MasterMeta") -> list[dict[str, Any]]:
+    """Colonnes filtrables : TOUTE colonne activable (nœud, attribut ou titre), avec sa
+    cardinalité et son rôle. Les valeurs se chargent à la demande (/facet-values) pour
+    ne pas gonfler le résumé. La colonne temps est marquée (`is_time`) — le curseur
+    d'années reste l'outil naturel pour une plage, mais elle reste filtrable au besoin."""
+    return [
+        {"col": l["col"], "n_unique": l["n_unique"], "role": l["role"],
+         "is_time": l["col"] == meta.time_col}
+        for l in meta.layer_cols if l.get("activable")
+    ]
+
+
+def column_values(G: nx.Graph, col: str,
+                  cap: int = FACET_VALUES_CAP) -> tuple[list[dict[str, Any]], bool]:
+    """Valeurs distinctes d'une colonne avec leur **occurrence** (nb de charnières reliées).
+    Renvoie ([{value, count}], tronqué?). Trié par fréquence décroissante puis alpha → si
+    tronqué (colonne quasi-unique), on garde les valeurs les plus fréquentes. Le front
+    re-trie comme l'utilisateur veut (alpha / fréquence)."""
+    pairs: list[tuple[str, int]] = []
+    for n, d in G.nodes(data=True):
+        if d.get("kind") == "entity" and d.get("type") == col and d.get("label") is not None:
+            count = sum(1 for nb in G.neighbors(n) if G.nodes[nb].get("kind") == "work")
+            pairs.append((d["label"], count))
+    truncated = len(pairs) > cap
+    pairs.sort(key=lambda p: (-p[1], p[0]))
+    return ([{"value": v, "count": c} for v, c in pairs[:cap]], truncated)
 
 
 def works_passing_facets(G: nx.Graph, facets: dict[str, list[str]] | None) -> set[str] | None:
-    """Charnières admises par les facettes : reliées à ≥1 valeur cochée de CHAQUE colonne
-    facettée (OU dans une colonne, ET entre colonnes). None = aucune facette active."""
+    """Charnières admises par les facettes : « coché = gardé ». Une charnière passe une
+    colonne facettée si elle est reliée à ≥1 valeur **cochée** (OU dans une colonne, ET
+    entre colonnes). Tout décoché dans une colonne (liste vide) = rien gardé pour cette
+    colonne → résultat vide. `None`/dict vide (colonne non facettée) = aucune contrainte."""
     if not facets:
         return None
     allowed: set[str] | None = None
     for col, values in facets.items():
-        if not values:
-            continue                       # colonne sans sélection → pas de contrainte
-        col_works: set[str] = set()
+        col_works: set[str] = set()          # liste vide → reste vide → rien gardé
         for v in values:
             nid = f"{col}::{v}"
             if nid in G:

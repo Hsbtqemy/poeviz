@@ -107,9 +107,10 @@
         <label title="Masque les nœuds ayant moins de N liens dans la vue courante (0 = aucun filtre). Enlève les nœuds isolés / peu reliés.">Degré minimum : <b id="deg-min-val">0</b></label>
         <input type="range" id="deg-min" min="0" max="10" value="0" style="width:100%;accent-color:var(--sel)">
       </div>
-      <div class="ctrl" id="facets-ctrl" style="display:none">
-        <label title="Ne garde que les objets reliés à une valeur cochée. Décocher tout dans une colonne = pas de filtre sur cette colonne.">Filtrer par attribut</label>
-        <div id="facets-list"></div>
+      <div class="ctrl">
+        <button class="side-btn" id="open-filters" title="Filtrer par les valeurs de n'importe quelle colonne">
+          <span aria-hidden="true">⛃</span> Filtrer par valeurs<b class="filters-count" id="filters-count"></b>
+        </button>
       </div>
     </div>
 
@@ -256,6 +257,17 @@
     </div>
     <div class="hint">Cliquez un nœud pour son détail · molette pour zoomer · glissez le fond pour déplacer · glissez un nœud pour le repositionner</div>
   </main>
+
+  <!-- Volet de filtres (toute colonne, refermable, NON-modal : la carte reste visible/active) -->
+  <aside class="filters-panel" id="filters-panel" aria-hidden="true">
+    <div class="fp-head">
+      <h2>Filtres</h2>
+      <button class="fp-reset" id="fp-reset" title="Tout réinitialiser">Réinitialiser</button>
+      <button class="fp-close" id="fp-close" title="Fermer">✕</button>
+    </div>
+    <div class="fp-note">Coche les valeurs à garder. Tout coché (ou tout décoché) = pas de filtre sur la colonne.</div>
+    <div class="fp-body" id="fp-cols"></div>
+  </aside>
 
   <!-- Panneau de détail droit -->
   <aside class="detail" id="detail">

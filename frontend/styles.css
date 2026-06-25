@@ -240,13 +240,52 @@ button{font-family:inherit;cursor:pointer}
   font-family:system-ui,Arial,sans-serif;font-size:12.5px;color:var(--ink)}
 .chk input{cursor:pointer;accent-color:var(--sel)}
 /* facettes (filtre par attribut) : un groupe repliable par colonne */
-.facet-group{margin:4px 0;border:1px solid var(--line);border-radius:7px;background:#fff}
-.facet-group summary{cursor:pointer;padding:5px 9px;font-size:12px;color:var(--ink);
-  font-family:system-ui,Arial,sans-serif;user-select:none}
+.facet-group{margin:5px 0;border:1px solid var(--line);border-radius:7px;background:#fff}
+.facet-group summary{cursor:pointer;padding:7px 10px;font-size:12.5px;color:var(--ink);
+  font-family:system-ui,Arial,sans-serif;user-select:none;display:flex;align-items:center;gap:7px}
+.facet-group summary::-webkit-details-marker{display:none}
+.facet-group summary::marker{content:""}
+.fg-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fg-meta{font-size:10px;color:var(--muted);flex:none}
+.fg-count{font-size:10px;font-weight:bold;color:#fff;background:var(--sel);border-radius:10px;
+  padding:1px 6px;min-width:14px;text-align:center;flex:none}
+.fg-count:empty{display:none}
 .facet-group[open] summary{border-bottom:1px solid var(--line)}
-.facet-values{padding:5px 9px 7px;display:flex;flex-direction:column;gap:1px;
-  max-height:168px;overflow-y:auto}
+.fg-load{padding:8px 10px;color:var(--muted);font-size:11px}
+.fg-content{padding:6px 10px 9px}
+.fg-tools{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+.fg-search{flex:1;min-width:0;border:1px solid var(--line);border-radius:6px;padding:4px 7px;
+  font-size:11.5px;font-family:system-ui,Arial,sans-serif}
+.fg-all,.fg-none{border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer;
+  font-size:10.5px;padding:3px 7px;color:var(--ink);font-family:system-ui,Arial,sans-serif;flex:none}
+.fg-all:hover,.fg-none:hover{border-color:var(--sel);color:var(--sel)}
+.fg-trunc{font-size:10.5px;color:var(--muted);margin-bottom:5px;font-style:italic}
+.fg-sort{border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);
+  font-size:10.5px;padding:2px 4px;cursor:pointer;flex:none;font-family:system-ui,Arial,sans-serif}
+.facet-values{display:flex;flex-direction:column;gap:1px;max-height:210px;overflow-y:auto}
 .facet-values .chk{font-size:11.5px;margin:1px 0}
+.fg-vlabel{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fg-vcount{color:var(--muted);font-size:10px;flex:none;font-variant-numeric:tabular-nums}
+
+/* volet de filtres (slide-out gauche, NON-modal : la carte reste visible/active à côté) */
+.filters-panel{position:fixed;top:0;bottom:0;left:0;width:340px;max-width:88vw;z-index:65;
+  background:var(--panel);border-right:1px solid var(--line);box-shadow:4px 0 20px rgba(0,0,0,.1);
+  transform:translateX(-100%);transition:transform .22s ease;display:flex;flex-direction:column}
+.filters-panel.open{transform:translateX(0)}
+.fp-head{display:flex;align-items:center;gap:10px;padding:15px 16px;border-bottom:1px solid var(--line)}
+.fp-head h2{font-size:18px;flex:1}
+.fp-reset{border:1px solid var(--line);background:#fff;border-radius:7px;cursor:pointer;
+  font-size:11px;padding:4px 9px;color:var(--ink);font-family:system-ui,Arial,sans-serif}
+.fp-reset:hover{border-color:var(--sel);color:var(--sel)}
+.fp-close{background:none;border:none;font-size:17px;color:var(--muted);cursor:pointer;line-height:1}
+.fp-note{padding:9px 16px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--line);
+  font-family:system-ui,Arial,sans-serif;line-height:1.4}
+.fp-body{flex:1;overflow-y:auto;padding:8px 14px 18px}
+
+/* pastille du bouton « Filtrer par valeurs » */
+.filters-count{margin-left:6px;font-size:10px;font-weight:bold;color:#fff;background:var(--sel);
+  border-radius:10px;padding:1px 6px}
+.filters-count:empty{display:none}
 /* barre de focalisation (mode ego) : superposée en haut du canvas */
 /* centrée dans la zone À GAUCHE du panneau de détail (toujours ouvert en focalisation),
    pour ne pas passer dessous (le panneau est superposé à droite) */

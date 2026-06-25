@@ -380,9 +380,20 @@ def configure(body: ConfigureBody) -> dict[str, Any]:
     session.positions = graph.initial_positions(G)
     session.metrics_cache.clear()      # nouveau graphe → cache de métriques obsolète
     summary = meta.to_summary()
-    # Valeurs cochables par colonne (faible cardinalité) pour le filtrage par facettes.
-    summary["facets"] = graph.facet_options(G, meta)
+    # Colonnes filtrables (toutes activables) ; les valeurs se chargent via /facet-values.
+    summary["filter_cols"] = graph.filter_columns(meta)
     return {"session_id": body.session_id, "summary": summary}
+
+
+@app.get("/facet-values")
+def facet_values(session_id: str, col: str) -> dict[str, Any]:
+    """Valeurs distinctes d'une colonne (labels d'entités), triées — pour le volet de
+    filtres, chargées à la demande. `truncated` = colonne quasi-unique tronquée (le
+    volet invite alors à affiner par la recherche)."""
+    session = get_session(session_id)
+    require_master(session)
+    values, truncated = graph.column_values(session.master, col)
+    return {"col": col, "values": values, "truncated": truncated}
 
 
 @app.get("/graph")
@@ -410,8 +421,10 @@ def get_graph(
         try:
             parsed = json.loads(facets)
             if isinstance(parsed, dict):
+                # On garde les listes VIDES (colonne tout décoché = rien gardé) ; seules
+                # les colonnes absentes du dict ne contraignent pas (cf. works_passing_facets).
                 facet_dict = {str(k): [str(x) for x in v]
-                              for k, v in parsed.items() if v} or None
+                              for k, v in parsed.items() if isinstance(v, list)} or None
         except (ValueError, TypeError):
             facet_dict = None
     params = parse_projection(layers, link_mode, show_hinge, year_min, year_max,
