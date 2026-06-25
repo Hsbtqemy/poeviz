@@ -78,12 +78,16 @@ def _prolific(P: nx.Graph, per_node: dict, unit_p: str) -> list[dict]:
 
 # --- Nœud : passeurs (forte intermédiarité = relient des groupes éloignés) -------------
 def _brokers(P: nx.Graph, per_node: dict) -> list[dict]:
-    ranked = sorted(P.nodes(),
-                    key=lambda n: per_node[n]["betweenness"], reverse=True)
+    bet = {n: per_node[n]["betweenness"] for n in P.nodes()}
+    mx = max(bet.values(), default=0.0)
+    if mx <= 0:
+        return []
+    floor = 0.5 * mx           # filtre le bruit : seuls les passeurs nettement au-dessus
+    ranked = sorted(P.nodes(), key=lambda n: bet[n], reverse=True)
     out = []
     for n in ranked[:TOP]:
-        b = per_node[n]["betweenness"]
-        if b <= 0:
+        b = bet[n]
+        if b < floor:
             break
         out.append({
             "kind": "passeur", "grain": "node",

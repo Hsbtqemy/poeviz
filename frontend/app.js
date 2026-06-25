@@ -1313,6 +1313,8 @@
     paire: "Paires récurrentes", pont: "Ponts uniques", communaute: "Communautés",
     temps: "Temps", anomalie: "Anomalies",
   };
+  // Ordre éditorial : les catégories les plus parlantes d'abord, les notes de bas après.
+  const KIND_ORDER = ["prolifique", "paire", "passeur", "communaute", "temps", "pont", "anomalie"];
   // Met en évidence ce qui est saillant : entités entre guillemets + écarts chiffrés.
   function emphasize(text) {
     return esc(text)
@@ -1321,6 +1323,21 @@
   }
 
   const SHOWN_PER_GROUP = 3;
+
+  // Une ligne « item » d'un trait (texte mis en évidence + lien vers la carte).
+  function traitRow(t, extraClass) {
+    const row = document.createElement("div");
+    row.className = "trait-row" + (extraClass || "");
+    row.innerHTML = `<span class="tr-text">${emphasize(t.detail)}</span>`;
+    if (t.refs && t.refs.length) {
+      const b = document.createElement("button");
+      b.className = "t-see"; b.textContent = "→ carte";
+      b.addEventListener("click", () => seeOnMap(t.refs));
+      row.appendChild(b);
+    }
+    return row;
+  }
+
   function renderTraits(sal) {
     const traits = (sal && sal.traits) || [];
     el["stats-traits"].innerHTML = "";
@@ -1328,26 +1345,20 @@
       el["stats-traits"].innerHTML = `<div class="stats-empty">Rien de saillant dans ce périmètre.</div>`;
       return;
     }
-    // Une carte par CATÉGORIE (pas par trait) → on voit la structure, pas un mur.
-    const order = [], byKind = {};
-    traits.forEach((t) => { if (!byKind[t.kind]) { byKind[t.kind] = []; order.push(t.kind); } byKind[t.kind].push(t); });
-    order.forEach((kind) => {
+    // Une carte par CATÉGORIE (ordre éditorial), items triés, 3 visibles + « voir plus ».
+    // Pas de « à retenir » ni de mise en avant : l'outil pose les faits, pas la conclusion.
+    const byKind = {};
+    traits.forEach((t) => { (byKind[t.kind] = byKind[t.kind] || []).push(t); });
+    const kinds = KIND_ORDER.filter((k) => byKind[k] && byKind[k].length)
+      .concat(Object.keys(byKind).filter((k) => !KIND_ORDER.includes(k) && byKind[k].length));
+    kinds.forEach((kind) => {
       const items = byKind[kind];
       const group = document.createElement("div");
       group.className = "trait-group";
       group.innerHTML = `<div class="tg-head">${esc(KIND_LABEL[kind] || kind)}` +
         `<span class="tg-count">${items.length}</span></div>`;
       items.forEach((t, i) => {
-        const row = document.createElement("div");
-        row.className = "trait-row" + (i >= SHOWN_PER_GROUP ? " tg-hidden" : "");
-        row.innerHTML = `<span class="tr-text">${emphasize(t.detail)}</span>`;
-        if (t.refs && t.refs.length) {
-          const b = document.createElement("button");
-          b.className = "t-see"; b.textContent = "→ carte";
-          b.addEventListener("click", () => seeOnMap(t.refs));
-          row.appendChild(b);
-        }
-        group.appendChild(row);
+        group.appendChild(traitRow(t, i >= SHOWN_PER_GROUP ? " tg-hidden" : ""));
       });
       if (items.length > SHOWN_PER_GROUP) {
         const more = document.createElement("span");
