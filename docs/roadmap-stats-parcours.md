@@ -183,6 +183,18 @@ signature de cache), `app.js` (barre de filtres, état), `index.html`, `styles.c
 
 ## T2 — Backend : agrégats de salience génériques
 
+> **État : livré.** Module `backend/salience.py` (`compute_salience(P, metrics, unité)`),
+> endpoint `GET /salience?…&scope=view|base`. Signaux génériques (rôles seuls) :
+> **prolifique** (work_count très au-dessus de la médiane du type), **passeur**
+> (intermédiarité), **paire récurrente** (poids d'arête), **pont** (seule arête entre 2
+> communautés), **communauté** (taille + membre central + composition par type), **temps**
+> (amplitude / plus précoce / plus tardif, *seulement si années présentes*), **anomalies**
+> (isolés / hapax). Chaque trait : `{kind, grain, title, detail (phrase factuelle), value,
+> refs}`. `scope=base` ignore années/degré min/facettes/focalisation. Métriques mutualisées
+> via `_projected_metrics` (cache de projection partagé avec /graph et /metrics). Couvert
+> par `tests/test_salience.py`. **Reste (T3)** : la valeur d'attribut dominante d'une
+> communauté (jointure attributs-charnières) — pour l'instant composition par type.
+
 **But.** Calculer « ce qui ressort » sur la projection courante, **à partir des rôles
 seuls**. Brique backend qui alimente T3 (affichage) et T6 (texte).
 

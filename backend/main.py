@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import io
 
-from . import ingest, graph, analysis, export
+from . import ingest, graph, analysis, export, salience
 
 # Réglages de garde-fou (faciles à éditer).
 MAX_SESSIONS = 12                 # plafond de sessions en mémoire (éviction LRU)
@@ -152,30 +152,40 @@ def parse_projection(layers: str | None, link_mode: str, show_hinge: bool,
     )
 
 
-def build_view(session: Session, params: graph.ProjectionParams,
-               color_by: str = "type", size_by: str = "degree") -> dict[str, Any]:
-    """Projette + analyse + assemble nœuds/arêtes prêts pour Sigma (et l'export)."""
+def _parse_facets(facets: str | None) -> dict[str, list[str]] | None:
+    """Décode le paramètre `facets` (JSON {colonne: [valeurs]}). On garde les listes VIDES
+    (colonne tout décoché = rien gardé) ; seules les colonnes absentes ne contraignent pas.
+    Malformé → None (aucun filtre)."""
+    if not facets:
+        return None
+    try:
+        parsed = json.loads(facets)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return {str(k): [str(x) for x in v]
+            for k, v in parsed.items() if isinstance(v, list)} or None
+
+
+def _projected_metrics(session: Session, params: graph.ProjectionParams,
+                       size_by: str = "degree") -> tuple[Any, dict, bool]:
+    """Projette le maître, applique focalisation (ego) puis filtre « degré minimum », et
+    renvoie (P, metrics, focus_dropped). Les métriques (Louvain + centralités, coûteuses)
+    sont mémorisées par **signature de projection** → revenir sur une vue est instantané.
+    Partagé par /graph (build_view), /metrics et /salience."""
     G, meta = session.master, session.meta
     P = graph.project(G, meta, params)
-
-    # Focalisation (ego) : restreindre la vue au voisinage du nœud focal (sous-graphe),
-    # pour que métriques / force / MDS se recalculent LOCALEMENT. focus hors-vue (filtré
-    # par les couches ou la fenêtre temporelle) → ignoré, signalé via focus_dropped.
+    # Focalisation (ego) : restreindre au voisinage du nœud focal (sous-graphe) pour que
+    # métriques / force se recalculent LOCALEMENT. focus hors-vue → ignoré (focus_dropped).
     focus_dropped = False
     if params.focus:
         if params.focus in P:
             P = P.subgraph(graph.ego_nodes(P, params.focus, params.hops)).copy()
         else:
             focus_dropped = True
-
-    # Filtre de lisibilité « degré minimum » : masque les nœuds peu reliés DANS la
-    # projection (après focalisation). Les métriques se recalculent donc sur la vue filtrée.
     if params.degree_min > 0:
         P = graph.filter_min_degree(P, params.degree_min)
-
-    # Métriques : coûteuses (Louvain + centralités). Elles ne dépendent que de la
-    # PROJECTION (couches/liens/charnière/années/focalisation/degré min) + size_by, pas
-    # de la couleur. On les mémorise → changer la couleur ou revenir sur une vue est instantané.
     cache_key = (
         tuple(sorted(params.layers)) if params.layers is not None else None,
         tuple(sorted(params.connector_layers)) if params.connector_layers is not None else None,
@@ -191,6 +201,14 @@ def build_view(session: Session, params: graph.ProjectionParams,
         if len(cache) >= MAX_METRICS_CACHE:
             cache.clear()                 # garde-fou mémoire (cache borné)
         cache[cache_key] = metrics
+    return P, metrics, focus_dropped
+
+
+def build_view(session: Session, params: graph.ProjectionParams,
+               color_by: str = "type", size_by: str = "degree") -> dict[str, Any]:
+    """Projette + analyse + assemble nœuds/arêtes prêts pour Sigma (et l'export)."""
+    meta = session.meta
+    P, metrics, focus_dropped = _projected_metrics(session, params, size_by)
     per_node = metrics["nodes"]
 
     # Échelle des tailles à partir de la centralité choisie.
@@ -415,21 +433,48 @@ def get_graph(
 ) -> dict[str, Any]:
     session = get_session(session_id)
     require_master(session)
-    # Facettes : objet {colonne: [valeurs]} encodé en JSON (URL-encodé). Malformé → ignoré.
-    facet_dict: dict[str, list[str]] | None = None
-    if facets:
-        try:
-            parsed = json.loads(facets)
-            if isinstance(parsed, dict):
-                # On garde les listes VIDES (colonne tout décoché = rien gardé) ; seules
-                # les colonnes absentes du dict ne contraignent pas (cf. works_passing_facets).
-                facet_dict = {str(k): [str(x) for x in v]
-                              for k, v in parsed.items() if isinstance(v, list)} or None
-        except (ValueError, TypeError):
-            facet_dict = None
     params = parse_projection(layers, link_mode, show_hinge, year_min, year_max,
-                              pivot, connectors, focus, hops, degree_min, facet_dict)
+                              pivot, connectors, focus, hops, degree_min,
+                              _parse_facets(facets))
     return build_view(session, params, color_by=color_by, size_by=size_by)
+
+
+@app.get("/salience")
+def get_salience(
+    session_id: str,
+    layers: str | None = None,
+    link_mode: str = "report",
+    show_hinge: bool = False,
+    pivot: str | None = None,
+    year_min: int | None = None,
+    year_max: int | None = None,
+    connectors: str | None = None,
+    focus: str | None = None,
+    hops: int = 1,
+    degree_min: int = 0,
+    facets: str | None = None,
+    scope: str = "view",
+) -> dict[str, Any]:
+    """« Ce qui ressort » : traits saillants génériques de la projection.
+    scope=view → respecte les filtres (vue courante) ; scope=base → recensement, ignore
+    années/degré min/facettes/focalisation (la structure des couches reste)."""
+    session = get_session(session_id)
+    require_master(session)
+    params = parse_projection(layers, link_mode, show_hinge, year_min, year_max,
+                              pivot, connectors, focus, hops, degree_min,
+                              _parse_facets(facets))
+    if scope == "base":
+        params.year_min = params.year_max = None
+        params.degree_min = 0
+        params.facets = None
+        params.focus = None
+    P, metrics, _ = _projected_metrics(session, params)
+    meta = session.meta
+    result = salience.compute_salience(P, metrics, meta.unit_singular, meta.unit_plural)
+    result["scope"] = scope
+    result["n_nodes"] = P.number_of_nodes()
+    result["n_edges"] = P.number_of_edges()
+    return result
 
 
 @app.get("/edge")
