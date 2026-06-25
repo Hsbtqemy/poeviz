@@ -414,6 +414,13 @@ class ProjectionParams:
     # voisinage à `hops` sauts (sous-graphe), métriques recalculées dessus (cf. /graph).
     focus: str | None = None
     hops: int = 1
+    # Filtre de lisibilité : masque les nœuds à moins de `degree_min` liens dans la
+    # PROJECTION (0 = aucun filtre). Appliqué après projection (cf. filter_min_degree).
+    degree_min: int = 0
+    # Facettes : restreint les charnières actives à celles reliées à une valeur cochée.
+    # {colonne: [valeurs gardées]} ; OU au sein d'une colonne, ET entre colonnes.
+    # None / vide = aucune facette (cf. project, work_active).
+    facets: dict[str, list[str]] | None = None
 
 
 def ego_nodes(P: nx.Graph, focus: str, hops: int) -> set[str]:
@@ -436,6 +443,60 @@ def ego_nodes(P: nx.Graph, focus: str, hops: int) -> set[str]:
     return seen
 
 
+# Cardinalité max d'une colonne pour proposer un filtre par facettes (au-delà, trop de
+# cases à cocher → on ne propose pas ; le filtrage ciblé passe par la recherche/le pivot).
+FACET_MAX_VALUES = 30
+
+
+def facet_options(G: nx.Graph, meta: "MasterMeta",
+                  max_values: int = FACET_MAX_VALUES) -> dict[str, list[str]]:
+    """Valeurs cochables par colonne pour le filtrage par facettes. Seules les colonnes
+    en rôle **attribut** (métadonnées descriptives : genre, langue, lieu…) à FAIBLE
+    cardinalité ; on exclut la colonne temporelle (gérée par le curseur d'années) et les
+    colonnes nœud/lien (qu'on cible via la recherche/le pivot). Valeurs = labels des
+    entités de ce type dans le maître (toute colonne activable a ses nœuds)."""
+    facetable = {l["col"] for l in meta.layer_cols
+                 if l.get("role") == ROLE_ATTRIBUTE and l["col"] != meta.time_col
+                 and l.get("activable") and 2 <= int(l.get("n_unique", 0)) <= max_values}
+    out: dict[str, set] = {c: set() for c in facetable}
+    for _, d in G.nodes(data=True):
+        if d.get("kind") == "entity" and d.get("type") in facetable:
+            out[d["type"]].add(d.get("label"))
+    return {c: sorted(v for v in vals if v is not None)
+            for c, vals in out.items() if vals}
+
+
+def works_passing_facets(G: nx.Graph, facets: dict[str, list[str]] | None) -> set[str] | None:
+    """Charnières admises par les facettes : reliées à ≥1 valeur cochée de CHAQUE colonne
+    facettée (OU dans une colonne, ET entre colonnes). None = aucune facette active."""
+    if not facets:
+        return None
+    allowed: set[str] | None = None
+    for col, values in facets.items():
+        if not values:
+            continue                       # colonne sans sélection → pas de contrainte
+        col_works: set[str] = set()
+        for v in values:
+            nid = f"{col}::{v}"
+            if nid in G:
+                col_works.update(w for w in G.neighbors(nid)
+                                 if G.nodes[w].get("kind") == "work")
+        allowed = col_works if allowed is None else (allowed & col_works)
+    return allowed
+
+
+def filter_min_degree(P: nx.Graph, k: int) -> nx.Graph:
+    """Retire les nœuds dont le degré (dans la projection) est < k. **Une seule passe**,
+    sans cascade (pas de k-core) → prévisible : « masquer les nœuds à moins de k liens ».
+    Filtre de lisibilité (hapax/isolés) ; ne touche jamais au graphe maître."""
+    if k <= 0:
+        return P
+    keep = [n for n, deg in P.degree() if deg >= k]
+    if len(keep) == P.number_of_nodes():
+        return P
+    return P.subgraph(keep).copy()
+
+
 def project(G: nx.Graph, meta: MasterMeta, params: ProjectionParams) -> nx.Graph:
     """Projette le graphe maître selon les paramètres. Ne modifie jamais G."""
     visible_types = set(params.layers) if params.layers is not None else set(meta.node_cols)
@@ -452,8 +513,11 @@ def project(G: nx.Graph, meta: MasterMeta, params: ProjectionParams) -> nx.Graph
             return False
         return True
 
+    # Facettes : sous-ensemble de charnières reliées aux valeurs cochées (None = pas de facette).
+    facet_works = works_passing_facets(G, params.facets)
     active_works = {n for n, d in G.nodes(data=True)
-                    if d.get("kind") == "work" and work_active(d)}
+                    if d.get("kind") == "work" and work_active(d)
+                    and (facet_works is None or n in facet_works)}
 
     # 2. Entités visibles : bon type + reliées à au moins un ouvrage actif.
     visible_entities = set()

@@ -134,6 +134,15 @@ reste, peu coûteux → à faire en premier (frustration immédiate levée).
 
 ## T1 — Socle : filtres au niveau projection
 
+> **État : livré.** Deux filtres au niveau projection, dans la signature de cache, sans
+> relayout (positions stables) : **degré minimum** (`ProjectionParams.degree_min` +
+> `graph.filter_min_degree`, une passe sans cascade) et **facettes par attribut**
+> (`ProjectionParams.facets` + `graph.facet_options`/`works_passing_facets` ; colonnes
+> attribut à faible cardinalité, hors colonne temps ; OR dans une colonne, ET entre
+> colonnes). Front : section « Filtres » (curseur + groupes repliables de cases). Param
+> `/graph` : `degree_min`, `facets` (JSON). Exposé via `summary.facets` à `/configure`.
+> Couvert par `test_filter_min_degree_hides_low_degree` et `test_facets_filter_by_attribute_value`.
+
 **But.** Un **filtrage par contenu**, construit là où il doit l'être — dans la
 **projection**, pas dans la carte — pour que **carte, stats et parcours** lisent le
 **même état filtré**. C'est la fondation des stats « vue courante ».

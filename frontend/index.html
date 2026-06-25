@@ -101,6 +101,18 @@
       </label>
     </div>
 
+    <div>
+      <div class="grp-label">Filtres</div>
+      <div class="ctrl">
+        <label title="Masque les nœuds ayant moins de N liens dans la vue courante (0 = aucun filtre). Enlève les nœuds isolés / peu reliés.">Degré minimum : <b id="deg-min-val">0</b></label>
+        <input type="range" id="deg-min" min="0" max="10" value="0" style="width:100%;accent-color:var(--sel)">
+      </div>
+      <div class="ctrl" id="facets-ctrl" style="display:none">
+        <label title="Ne garde que les objets reliés à une valeur cochée. Décocher tout dans une colonne = pas de filtre sur cette colonne.">Filtrer par attribut</label>
+        <div id="facets-list"></div>
+      </div>
+    </div>
+
     <div class="adv" id="adv">
       <div class="adv-toggle" id="adv-toggle"><span>Options avancées</span><span class="caret">›</span></div>
       <div class="adv-body">

@@ -10,6 +10,7 @@ Lancement :  uvicorn backend.main:app --reload
 """
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from collections import OrderedDict
@@ -129,7 +130,9 @@ def parse_projection(layers: str | None, link_mode: str, show_hinge: bool,
                      year_min: int | None, year_max: int | None,
                      pivot: str | None,
                      connectors: str | None = None,
-                     focus: str | None = None, hops: int = 1) -> graph.ProjectionParams:
+                     focus: str | None = None, hops: int = 1,
+                     degree_min: int = 0,
+                     facets: dict[str, list[str]] | None = None) -> graph.ProjectionParams:
     layer_list = None
     if layers is not None and layers != "":
         layer_list = [x for x in layers.split(",") if x]
@@ -144,6 +147,8 @@ def parse_projection(layers: str | None, link_mode: str, show_hinge: bool,
         year_min=year_min, year_max=year_max, pivot=pivot or None,
         connector_layers=connector_list,
         focus=focus or None, hops=max(1, min(3, hops)),     # focalisation (ego), 1..3 sauts
+        degree_min=max(0, degree_min),                       # filtre « degré minimum »
+        facets=facets or None,                               # filtre par facettes (attributs)
     )
 
 
@@ -163,14 +168,21 @@ def build_view(session: Session, params: graph.ProjectionParams,
         else:
             focus_dropped = True
 
+    # Filtre de lisibilité « degré minimum » : masque les nœuds peu reliés DANS la
+    # projection (après focalisation). Les métriques se recalculent donc sur la vue filtrée.
+    if params.degree_min > 0:
+        P = graph.filter_min_degree(P, params.degree_min)
+
     # Métriques : coûteuses (Louvain + centralités). Elles ne dépendent que de la
-    # PROJECTION (couches/liens/charnière/années/focalisation) + size_by, pas de la couleur.
-    # On les mémorise → changer la couleur ou revenir sur une vue est instantané.
+    # PROJECTION (couches/liens/charnière/années/focalisation/degré min) + size_by, pas
+    # de la couleur. On les mémorise → changer la couleur ou revenir sur une vue est instantané.
     cache_key = (
         tuple(sorted(params.layers)) if params.layers is not None else None,
         tuple(sorted(params.connector_layers)) if params.connector_layers is not None else None,
         params.link_mode, params.show_hinge, params.year_min, params.year_max, size_by,
-        params.focus, params.hops,
+        params.focus, params.hops, params.degree_min,
+        tuple(sorted((c, tuple(sorted(v))) for c, v in params.facets.items()))
+        if params.facets else None,
     )
     cache = session.metrics_cache
     metrics = cache.get(cache_key)
@@ -367,7 +379,10 @@ def configure(body: ConfigureBody) -> dict[str, Any]:
     session.meta = meta
     session.positions = graph.initial_positions(G)
     session.metrics_cache.clear()      # nouveau graphe → cache de métriques obsolète
-    return {"session_id": body.session_id, "summary": meta.to_summary()}
+    summary = meta.to_summary()
+    # Valeurs cochables par colonne (faible cardinalité) pour le filtrage par facettes.
+    summary["facets"] = graph.facet_options(G, meta)
+    return {"session_id": body.session_id, "summary": summary}
 
 
 @app.get("/graph")
@@ -384,11 +399,23 @@ def get_graph(
     connectors: str | None = None,
     focus: str | None = None,
     hops: int = 1,
+    degree_min: int = 0,
+    facets: str | None = None,
 ) -> dict[str, Any]:
     session = get_session(session_id)
     require_master(session)
+    # Facettes : objet {colonne: [valeurs]} encodé en JSON (URL-encodé). Malformé → ignoré.
+    facet_dict: dict[str, list[str]] | None = None
+    if facets:
+        try:
+            parsed = json.loads(facets)
+            if isinstance(parsed, dict):
+                facet_dict = {str(k): [str(x) for x in v]
+                              for k, v in parsed.items() if v} or None
+        except (ValueError, TypeError):
+            facet_dict = None
     params = parse_projection(layers, link_mode, show_hinge, year_min, year_max,
-                              pivot, connectors, focus, hops)
+                              pivot, connectors, focus, hops, degree_min, facet_dict)
     return build_view(session, params, color_by=color_by, size_by=size_by)
 
 

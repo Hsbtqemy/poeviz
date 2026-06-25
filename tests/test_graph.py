@@ -72,6 +72,42 @@ def test_year_window_filters_works():
     assert len(works) == 2          # T1 (2000) exclu
 
 
+def test_filter_min_degree_hides_low_degree():
+    """Filtre de lisibilité : masque les nœuds peu reliés dans la projection.
+    Report de make_df → degrés A=2, E1=2, E2=1, B=1 (E2 et B sont des hapax)."""
+    G, meta = graph.build_master_graph(make_df(), ROLES, SEP)
+    P = graph.project(G, meta, graph.ProjectionParams())     # report, charnière masquée
+    Pf = graph.filter_min_degree(P, 2)
+    assert "Éditeur::E2" not in Pf and "Auteur::B" not in Pf  # degré 1 → retirés
+    assert "Auteur::A" in Pf and "Éditeur::E1" in Pf
+    # une seule passe (pas de cascade k-core) : tout nœud GARDÉ avait un degré ≥ 2 dans P
+    assert all(P.degree(n) >= 2 for n in Pf.nodes())
+    # k ≤ 0 : aucun filtre, objet inchangé (vue par défaut préservée)
+    assert graph.filter_min_degree(P, 0) is P
+
+
+def test_facets_filter_by_attribute_value():
+    """Facettes : ne garde que les charnières reliées à une valeur cochée. Seules les
+    colonnes-attribut à faible cardinalité sont facettables (pas les nœuds ni le titre)."""
+    df = pd.DataFrame({
+        "Titre": ["T1", "T2", "T3"],
+        "Auteur": ["A", "B", "C"],
+        "Genre": ["Roman", "Roman", "Essai"],
+    })
+    roles = {"Titre": "edge", "Auteur": "node", "Genre": "attribute"}
+    G, meta = graph.build_master_graph(df, roles, SEP)
+    opts = graph.facet_options(G, meta)
+    assert set(opts.get("Genre", [])) == {"Roman", "Essai"}
+    assert "Auteur" not in opts and "Titre" not in opts     # nœud / lien non facettables
+    # Genre=Roman → seuls A et B restent (C est en Essai, sa charnière devient inactive)
+    P = graph.project(G, meta, graph.ProjectionParams(facets={"Genre": ["Roman"]}))
+    assert "Auteur::A" in P and "Auteur::B" in P
+    assert "Auteur::C" not in P
+    # None / sélection vide = aucun filtre
+    assert graph.works_passing_facets(G, None) is None
+    assert graph.works_passing_facets(G, {"Genre": []}) is None
+
+
 def test_hinge_key_merges_rows():
     """Deux lignes partageant la clé fusionnent en une seule charnière."""
     df = pd.DataFrame({

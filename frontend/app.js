@@ -26,6 +26,8 @@
     simAttract: false, simDims: [], simThreshold: 0.5,   // similarité (T4) : rapprocher les semblables
     focus: null, focusHops: 1, focusTrail: [],           // mode focalisation (ego)
     showHinge: false,
+    degreeMin: 0,                 // filtre « degré minimum » (0 = aucun filtre)
+    facets: {},                   // {colonne: Set(valeurs cochées)} ; tout coché = pas de filtre
     yearMin: null, yearMax: null,
     fullYearMin: null, fullYearMax: null,
     timeMode: "cumulative",       // cumulative | window
@@ -51,6 +53,7 @@
    "roles-overlay", "roles-body", "roles-hint", "roles-build", "roles-cancel", "roles-status",
    "unit-singular", "unit-preview", "hinge-key",
    "app", "brand-sub", "search", "pivot-list", "layers-list", "hinge-layer", "hinge-label", "reconfig",
+   "deg-min", "deg-min-val", "facets-ctrl", "facets-list",
    "adv", "adv-toggle", "seg-link", "seg-pivot", "seg-color", "seg-labels",
    "size-by", "layout-sel", "axes-ctrl", "axis-x", "axis-y", "seg-axis-order",
    "force-ctrl", "force-linlog", "force-outbound", "force-community", "force-weight", "force-weight-val",
@@ -293,6 +296,8 @@
     State.layersOn = new Set(State.summary.node_layers);
     State.connectors = new Set();          // aucune lentille au départ (tout affiché)
     State.pivot = null;
+    State.degreeMin = 0;                    // filtre remis à zéro pour un nouveau fichier
+    if (el["deg-min"]) { el["deg-min"].value = 0; el["deg-min-val"].textContent = "0"; }
     State.fullYearMin = State.summary.year_min; State.fullYearMax = State.summary.year_max;
     State.yearMin = State.summary.year_min; State.yearMax = State.summary.year_max;
     State.layoutSig = null;
@@ -329,6 +334,7 @@
 
     buildPivotList();
     buildLayers();
+    buildFacets();
     buildAxisControls();
     buildSimControls();
     buildCardFields();
@@ -541,6 +547,49 @@
       if (State.showHinge) ensureCardData();   // 1re activation → charge les cartes
       refreshGraph();
     };
+  }
+
+  // ----------------------------------------------------------- facettes (filtres)
+  // Cases par valeur pour les colonnes-attribut à faible cardinalité (fournies par
+  // /configure dans summary.facets). Tout coché = pas de filtre ; un sous-ensemble
+  // strict ne garde que les objets reliés à une valeur cochée (OR dans la colonne).
+  function buildFacets() {
+    const facets = (State.summary && State.summary.facets) || {};
+    const cols = Object.keys(facets);
+    el["facets-ctrl"].style.display = cols.length ? "" : "none";
+    el["facets-list"].innerHTML = "";
+    State.facets = {};
+    cols.forEach((col) => {
+      const values = facets[col];
+      State.facets[col] = new Set(values);          // tout coché au départ
+      const det = document.createElement("details");
+      det.className = "facet-group";
+      const sum = document.createElement("summary");
+      sum.textContent = col;
+      det.appendChild(sum);
+      const box = document.createElement("div");
+      box.className = "facet-values";
+      values.forEach((v) => {
+        const lab = document.createElement("label");
+        lab.className = "chk";
+        const inp = document.createElement("input");
+        inp.type = "checkbox"; inp.checked = true;
+        inp.addEventListener("change", () => {
+          if (inp.checked) State.facets[col].add(v); else State.facets[col].delete(v);
+          updateFacetSummary(col, sum, values.length);
+          refreshGraph();
+        });
+        lab.appendChild(inp);
+        lab.appendChild(document.createTextNode(" " + v));
+        box.appendChild(lab);
+      });
+      det.appendChild(box);
+      el["facets-list"].appendChild(det);
+    });
+  }
+  function updateFacetSummary(col, sumEl, total) {
+    const n = State.facets[col].size;
+    sumEl.textContent = (n > 0 && n < total) ? `${col} · ${n}/${total}` : col;
   }
 
   // --------------------------------------------------------------- timeline
@@ -760,6 +809,10 @@
     });
     el["focus-back"].addEventListener("click", focusBack);
     el["focus-exit"].addEventListener("click", exitFocus);
+    // Filtre « degré minimum » : libellé en direct (input), application au relâcher (change).
+    // Pas de relayout : les positions restent stables, on masque seulement les nœuds peu reliés.
+    el["deg-min"].addEventListener("input", (e) => { el["deg-min-val"].textContent = e.target.value; });
+    el["deg-min"].addEventListener("change", (e) => { State.degreeMin = +e.target.value; refreshGraph(); });
     el["search"].addEventListener("input", (e) => { State.search = e.target.value; NetView.applySearch(e.target.value); });
     el["dclose"].addEventListener("click", deselect);
     el["share-btn"].addEventListener("click", shareStub);
@@ -794,6 +847,15 @@
     if (State.pivot) p.set("pivot", State.pivot);
     if (State.yearMin != null) { p.set("year_min", State.yearMin); p.set("year_max", State.yearMax); }
     if (State.focus) { p.set("focus", State.focus); p.set("hops", State.focusHops); }   // focalisation (ego)
+    if (State.degreeMin > 0) p.set("degree_min", State.degreeMin);                       // filtre degré min
+    // Facettes : on n'envoie qu'un sous-ensemble STRICT et non vide (sinon = pas de filtre).
+    const facetObj = {};
+    Object.keys(State.facets || {}).forEach((col) => {
+      const checked = State.facets[col];
+      const total = ((State.summary.facets || {})[col] || []).length;
+      if (checked.size > 0 && checked.size < total) facetObj[col] = [...checked];
+    });
+    if (Object.keys(facetObj).length) p.set("facets", JSON.stringify(facetObj));
     return p.toString();
   }
   function layoutSignature() {
