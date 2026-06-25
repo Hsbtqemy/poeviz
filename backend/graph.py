@@ -35,6 +35,12 @@ from .ingest import (ROLE_NODE, ROLE_EDGE, ROLE_ATTRIBUTE, ROLE_IGNORE, split_ce
 
 WORK_TYPE = "__work__"
 
+# Amorce de positions (cf. initial_positions) : spring_layout est en O(n²)/itération.
+# Au-delà de MAX_SPRING_NODES on l'évite (amorce aléatoire) ; en deçà, le nombre
+# d'itérations est plafonné par SPRING_BUDGET (≈ n²·itérations) pour borner le temps.
+MAX_SPRING_NODES = 1200
+SPRING_BUDGET = 25_000_000
+
 # Palette par défaut pour les types d'entités. On essaie d'abord un mapping par
 # nom (pour de jolis défauts sur des données franco-roumaines), sinon on pioche
 # dans un cycle. Rien n'est figé : la couleur encode le *type* (togglable côté
@@ -993,9 +999,19 @@ def initial_positions(G: nx.Graph, scale: float = 10.0) -> dict[str, list[float]
     avec ForceAtlas2, puis renvoie les positions finales pour l'export, ce qui
     garantit que l'image correspond à l'écran.
     """
-    if G.number_of_nodes() == 0:
+    n = G.number_of_nodes()
+    if n == 0:
         return {}
-    k = 1.0 / max(1.0, (G.number_of_nodes() ** 0.5))
-    pos = nx.spring_layout(G, seed=42, k=k, iterations=120)
-    return {n: [round(float(xy[0]) * scale, 4), round(float(xy[1]) * scale, 4)]
-            for n, xy in pos.items()}
+    # `spring_layout` est en O(n²) par itération (répulsion toutes-paires) → il ne passe
+    # pas à l'échelle. Comme le front affine de toute façon avec ForceAtlas2, ces
+    # positions ne sont qu'une AMORCE : on plafonne le coût.
+    #  - petit/moyen graphe : itérations bornées par un budget (≈ qq secondes max) ;
+    #  - gros graphe (> MAX_SPRING_NODES) : amorce aléatoire déterministe (instantanée).
+    if n > MAX_SPRING_NODES:
+        pos = nx.random_layout(G, seed=42)
+    else:
+        iters = max(15, min(120, int(SPRING_BUDGET / (n * n))))
+        k = 1.0 / max(1.0, (n ** 0.5))
+        pos = nx.spring_layout(G, seed=42, k=k, iterations=iters)
+    return {node: [round(float(xy[0]) * scale, 4), round(float(xy[1]) * scale, 4)]
+            for node, xy in pos.items()}

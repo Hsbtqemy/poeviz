@@ -80,10 +80,17 @@ def _normalized_degree(P: nx.Graph) -> dict[str, float]:
 
 
 def _safe_betweenness(P: nx.Graph) -> dict[str, float]:
-    if P.number_of_nodes() < 3:
+    n = P.number_of_nodes()
+    if n < 3:
         return {node: 0.0 for node in P.nodes()}
     try:
-        return nx.betweenness_centrality(P, weight="weight", normalized=True)
+        # La betweenness exacte est en O(n·m) → elle explose sur les gros réseaux.
+        # Au-delà d'un seuil, on l'estime par échantillonnage de k pivots (O(k·m)),
+        # déterministe (seed). Les valeurs servent à classer/dimensionner, pas à une
+        # mesure absolue → l'approximation est largement suffisante.
+        k = None if n <= 500 else min(n, 200)
+        return nx.betweenness_centrality(P, k=k, weight="weight",
+                                         normalized=True, seed=42)
     except Exception:
         return {node: 0.0 for node in P.nodes()}
 

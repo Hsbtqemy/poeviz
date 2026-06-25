@@ -92,7 +92,8 @@
 
   // ------------------------------------------------------------ dépôt fichier
   function initUpload() {
-    el["dropzone"].addEventListener("click", () => el["file-input"].click());
+    // Le dropzone est un <label> englobant l'input : cliquer ouvre déjà le sélecteur
+    // de fichier nativement. Pas de handler JS rappelant .click() (sinon DOUBLE ouverture).
     el["file-input"].addEventListener("change", (e) => { if (e.target.files[0]) handleFile(e.target.files[0]); });
     ["dragover", "dragenter"].forEach((ev) => el["dropzone"].addEventListener(ev, (e) => { e.preventDefault(); el["dropzone"].classList.add("drag"); }));
     ["dragleave", "drop"].forEach((ev) => el["dropzone"].addEventListener(ev, (e) => { e.preventDefault(); el["dropzone"].classList.remove("drag"); }));
