@@ -46,6 +46,7 @@
     statsGrain: "entites",        // onglet d'exploration : entites | paires | ensemble
     statsGraph: null,             // données /graph du périmètre stats courant
     lastSalience: null,           // dernier /salience (pour l'export texte)
+    chartKind: null, chartUrl: null,   // aperçu de graphique courant
     statsSort: { col: null, dir: -1 },
     lastFocusBeforeStats: null,
     layoutSig: null,
@@ -85,7 +86,8 @@
    "chrono-pivot", "chrono-color", "chrono-status", "chrono-scroll",
    "stats-btn", "stats-close", "stats-screen", "stats-scope", "stats-meta",
    "stats-traits", "stats-grain", "stats-table", "hasard-btn", "hasard-btn-stats",
-   "exp-synth", "exp-tab-csv", "exp-tab-xlsx"
+   "exp-synth", "exp-tab-csv", "exp-tab-xlsx", "exp-bars", "exp-histo", "exp-matrix",
+   "stats-chart-block", "chart-title", "chart-preview", "chart-dl-png", "chart-dl-svg", "chart-hide"
   ].forEach((id) => { el[id] = $(id); });
 
   // Nom de la charnière (« objet / objets » par défaut). cap() capitalise pour
@@ -1294,6 +1296,7 @@
     const q = statsQuery(scope);
     el["stats-traits"].innerHTML = `<div class="stats-empty">Calcul…</div>`;
     el["stats-table"].innerHTML = "";
+    hideChart();                                 // aperçu de graphique périmé → on le masque
     try {
       const [sal, gdata] = await Promise.all([
         getJSON(`/salience?${q}&scope=${scope}`),
@@ -1525,27 +1528,52 @@
     downloadBlob(new Blob([lines.join("\r\n")], { type: "text/plain;charset=utf-8" }), "synthese-stats.txt");
   }
 
-  // Tableau du grain courant : entités/ensemble → métriques ; paires → arêtes.
-  // On réutilise /export en lui passant la vue du PÉRIMÈTRE stats (State.statsGraph).
-  async function exportStatsTable(format) {
+  // POST /export sur la vue du PÉRIMÈTRE stats (State.statsGraph) → renvoie le blob.
+  async function fetchStatsExport(kind, format) {
     const g = State.statsGraph;
-    if (!g) { flash("Rien à exporter."); return; }
-    const paires = State.statsGrain === "paires";
-    const kind = paires ? "csv_edges" : "metrics";
-    const fmt = paires ? "csv" : format;             // pas de XLSX pour les arêtes → CSV
-    if (paires && format === "xlsx") flash("Les paires s'exportent en CSV.");
+    if (!g) { flash("Rien à exporter."); return null; }
     try {
       const body = {
-        session_id: State.sessionId, kind, format: fmt,
+        session_id: State.sessionId, kind, format,
         view: { nodes: g.nodes, edges: g.edges },
         title: State.filename, unit_singular: unitS(), unit_plural: unitP(),
       };
       const res = await api("/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const blob = await res.blob();
-      const cd = res.headers.get("Content-Disposition") || "";
-      const m = cd.match(/filename="?([^"]+)"?/);
-      downloadBlob(blob, m ? m[1] : `stats.${fmt}`);
-    } catch (e) { flash("Échec export : " + e.message); }
+      return await res.blob();
+    } catch (e) { flash("Échec export : " + e.message); return null; }
+  }
+  async function downloadStatsExport(kind, format, fallback) {
+    const blob = await fetchStatsExport(kind, format);
+    if (blob) downloadBlob(blob, fallback);
+  }
+
+  // Tableau du grain courant : entités/ensemble → métriques ; paires → arêtes.
+  function exportStatsTable(format) {
+    const paires = State.statsGrain === "paires";
+    if (paires && format === "xlsx") flash("Les paires s'exportent en CSV.");
+    const kind = paires ? "csv_edges" : "metrics";    // pas de XLSX pour les arêtes → CSV
+    const fmt = paires ? "csv" : format;
+    downloadStatsExport(kind, fmt, `stats.${fmt}`);
+  }
+
+  // Graphiques : on AFFICHE d'abord l'aperçu (PNG), avec téléchargement PNG/SVG dessous.
+  async function showChart(kind, label) {
+    el["chart-title"].textContent = "Graphique — calcul…";
+    el["stats-chart-block"].style.display = "";
+    const blob = await fetchStatsExport(kind, "png");
+    if (!blob) { hideChart(); return; }
+    State.chartKind = kind;
+    if (State.chartUrl) URL.revokeObjectURL(State.chartUrl);
+    State.chartUrl = URL.createObjectURL(blob);
+    el["chart-preview"].innerHTML = `<img src="${State.chartUrl}" alt="${esc(label)}">`;
+    el["chart-title"].textContent = label;
+    el["stats-chart-block"].scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+  function hideChart() {
+    el["stats-chart-block"].style.display = "none";
+    el["chart-preview"].innerHTML = "";
+    if (State.chartUrl) { URL.revokeObjectURL(State.chartUrl); State.chartUrl = null; }
+    State.chartKind = null;
   }
 
   function initStats() {
@@ -1556,6 +1584,12 @@
     el["exp-synth"].addEventListener("click", exportSalienceText);
     el["exp-tab-csv"].addEventListener("click", () => exportStatsTable("csv"));
     el["exp-tab-xlsx"].addEventListener("click", () => exportStatsTable("xlsx"));
+    el["exp-bars"].addEventListener("click", () => showChart("bars", "Top entités par liens"));
+    el["exp-histo"].addEventListener("click", () => showChart("histogram", "Entités par année moyenne"));
+    el["exp-matrix"].addEventListener("click", () => showChart("matrix", "Co-occurrences (top entités)"));
+    el["chart-dl-png"].addEventListener("click", () => { if (State.chartKind) downloadStatsExport(State.chartKind, "png", `${State.chartKind}.png`); });
+    el["chart-dl-svg"].addEventListener("click", () => { if (State.chartKind) downloadStatsExport(State.chartKind, "svg", `${State.chartKind}.svg`); });
+    el["chart-hide"].addEventListener("click", hideChart);
     wireSeg(el["stats-scope"], (v) => { State.statsScope = v; State.statsSort = { col: null, dir: -1 }; loadStats(); });
     wireSeg(el["stats-grain"], (v) => { State.statsGrain = v; State.statsSort = { col: null, dir: -1 }; renderStatsTable(); });
   }

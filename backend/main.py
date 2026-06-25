@@ -120,6 +120,7 @@ class ExportBody(BaseModel):
     time_axis: dict[str, Any] | None = None      # réseau temporel : axe des années à dessiner
     unit_singular: str = "objet"   # nom d'une ligne (charnière) pour les libellés
     unit_plural: str = "objets"
+    chart_by: str = "degree_raw"   # métrique des barres (bars) : degree_raw|work_count|betweenness
 
 
 # --------------------------------------------------------------------------
@@ -726,6 +727,39 @@ def post_export(body: ExportBody):
                 ext = "xlsx"
             else:
                 data, ctype, ext = export.metrics_csv(nodes), "text/csv", "csv"
+        elif kind == "bars":
+            # Barres top-N des entités selon une métrique (liens par défaut).
+            by = body.chart_by if body.chart_by in ("degree_raw", "work_count", "betweenness") else "degree_raw"
+            ents = sorted((n for n in nodes if n.get("kind") == "entity"),
+                          key=lambda n: n.get(by, 0) or 0, reverse=True)[:20]
+            rows = [(n.get("label", n.get("id")), n.get(by, 0) or 0) for n in ents]
+            lbl = {"degree_raw": "liens", "work_count": body.unit_plural,
+                   "betweenness": "intermédiarité"}.get(by, by)
+            data, ctype = export.render_bars(rows, f"Top entités par {lbl}",
+                                             fmt=body.format, dimensions=body.dimensions)
+            ext = body.format.lower()
+        elif kind == "histogram":
+            years = [n.get("mean_year") for n in nodes
+                     if n.get("kind") == "entity" and n.get("mean_year") is not None]
+            data, ctype = export.render_histogram(years, "Entités par année moyenne",
+                                                  xlabel="Année moyenne",
+                                                  fmt=body.format, dimensions=body.dimensions)
+            ext = body.format.lower()
+        elif kind == "matrix":
+            ents = sorted((n for n in nodes if n.get("kind") == "entity"),
+                          key=lambda n: n.get("degree_raw", 0) or 0, reverse=True)[:15]
+            idx = {n["id"]: i for i, n in enumerate(ents)}
+            labels = [n.get("label", n["id"]) for n in ents]
+            mat = [[0.0] * len(ents) for _ in ents]
+            for e in edges:
+                s, t = e.get("source"), e.get("target")
+                if s in idx and t in idx:
+                    w = float(e.get("weight", 1))
+                    mat[idx[s]][idx[t]] = w
+                    mat[idx[t]][idx[s]] = w
+            data, ctype = export.render_matrix(labels, mat,
+                                               "Co-occurrences (top entités)", fmt=body.format)
+            ext = body.format.lower()
         else:
             raise HTTPException(400, f"Type d'export inconnu : {kind}")
     except ValueError as exc:

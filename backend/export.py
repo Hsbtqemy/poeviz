@@ -246,6 +246,95 @@ def render_chronology(chrono: dict[str, Any], fmt: str = "png",
     return buf.getvalue(), ctype
 
 
+# --------------------------------------------------------------------------
+# Graphiques de statistiques (barres / histogramme / matrice de co-occurrence)
+# --------------------------------------------------------------------------
+
+def _save_fig(fig, fmt: str) -> tuple[bytes, str]:
+    buf = io.BytesIO(); fmt = fmt.lower()
+    if fmt == "png":
+        fig.savefig(buf, format="png", dpi=300, facecolor=PAPER, bbox_inches="tight"); ct = "image/png"
+    elif fmt == "svg":
+        fig.savefig(buf, format="svg", facecolor=PAPER, bbox_inches="tight"); ct = "image/svg+xml"
+    elif fmt == "pdf":
+        fig.savefig(buf, format="pdf", facecolor=PAPER, bbox_inches="tight"); ct = "application/pdf"
+    else:
+        plt.close(fig); raise ValueError(f"Format d'image non supporté : {fmt}")
+    plt.close(fig)
+    return buf.getvalue(), ct
+
+
+def render_bars(rows: list[tuple[str, float]], title: str,
+                fmt: str = "png", dimensions: str = "pleine_page") -> tuple[bytes, str]:
+    """Barres horizontales (top-N). `rows` = [(label, valeur), …] trié décroissant."""
+    if not rows:
+        raise ValueError("Aucune donnée à représenter.")
+    width, _ = DIMENSION_PRESETS.get(dimensions, DIMENSION_PRESETS["pleine_page"])
+    labels = [str(r[0]) for r in rows][::-1]        # barh : la plus grande en haut
+    values = [float(r[1]) for r in rows][::-1]
+    fig, ax = plt.subplots(figsize=(width, max(2.2, 0.34 * len(rows) + 1)))
+    fig.patch.set_facecolor(PAPER); ax.set_facecolor(PAPER)
+    ax.barh(range(len(values)), values, color="#1D8A68", edgecolor="white", height=0.72)
+    ax.set_yticks(range(len(values))); ax.set_yticklabels(labels, fontsize=8)
+    ax.set_xlim(0, (max(values) * 1.08) if values else 1)
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+    ax.spines["left"].set_color("#CFC9BD"); ax.spines["bottom"].set_color("#CFC9BD")
+    ax.tick_params(colors="#8A857B")
+    ax.set_title(title, color=INK, fontsize=13, loc="left", pad=10)
+    fig.tight_layout()
+    return _save_fig(fig, fmt)
+
+
+def render_histogram(values: list[float], title: str, xlabel: str = "Année",
+                     fmt: str = "png", dimensions: str = "pleine_page") -> tuple[bytes, str]:
+    """Histogramme d'une série de nombres (ex. années moyennes des entités)."""
+    vals = [float(v) for v in values if v is not None]
+    if not vals:
+        raise ValueError("Aucune valeur numérique à représenter (pas d'années dans cette vue ?).")
+    width, height = DIMENSION_PRESETS.get(dimensions, DIMENSION_PRESETS["pleine_page"])
+    fig, ax = plt.subplots(figsize=(width, height * 0.72))
+    fig.patch.set_facecolor(PAPER); ax.set_facecolor(PAPER)
+    span = int(max(vals)) - int(min(vals))
+    bins = max(6, min(40, span + 1))
+    ax.hist(vals, bins=bins, color="#3B6FA8", edgecolor="white")
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+    ax.spines["left"].set_color("#CFC9BD"); ax.spines["bottom"].set_color("#CFC9BD")
+    ax.tick_params(colors="#8A857B")
+    ax.set_xlabel(xlabel, color=INK, fontsize=10)
+    ax.set_ylabel("Effectif", color=INK, fontsize=10)
+    ax.set_title(title, color=INK, fontsize=13, loc="left", pad=10)
+    fig.tight_layout()
+    return _save_fig(fig, fmt)
+
+
+def render_matrix(labels: list[str], mat: list[list[float]], title: str,
+                  fmt: str = "png") -> tuple[bytes, str]:
+    """Matrice de co-occurrence (heatmap carrée). `labels` = N noms ; `mat` = N×N poids."""
+    n = len(labels)
+    if n < 2:
+        raise ValueError("Pas assez d'entités pour une matrice de co-occurrence.")
+    side = max(4.5, 0.46 * n + 2)
+    fig, ax = plt.subplots(figsize=(side, side))
+    fig.patch.set_facecolor(PAPER); ax.set_facecolor(PAPER)
+    im = ax.imshow(mat, cmap="YlGn", aspect="equal")
+    ax.set_xticks(range(n)); ax.set_yticks(range(n))
+    ax.set_xticklabels(labels, fontsize=7, rotation=45, ha="right")
+    ax.set_yticklabels(labels, fontsize=7)
+    mx = max((max(r) for r in mat), default=0) or 1
+    for i in range(n):
+        for j in range(n):
+            v = mat[i][j]
+            if v:
+                ax.text(j, i, str(int(v)), ha="center", va="center", fontsize=6,
+                        color=("white" if v >= mx * 0.6 else "#23201C"))
+    ax.set_title(title, color=INK, fontsize=13, loc="left", pad=12)
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    fig.tight_layout()
+    return _save_fig(fig, fmt)
+
+
 def _labelled_nodes(nodes: list[dict], labels: str) -> list[dict]:
     # En mode « sélection en évidence », les nœuds estompés (alpha < 1) ne sont pas
     # étiquetés — comme à l'écran ; le nœud sélectionné l'est toujours. Sans champ

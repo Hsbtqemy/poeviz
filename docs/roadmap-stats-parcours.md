@@ -370,9 +370,12 @@ fait côté serveur (sinon front pur sur les données de `/graph`).
 >   (phrases factuelles de `/salience` assemblées localement, périmètre + résumé en tête).
 > - **Tableaux par grain** : boutons CSV/XLSX → réutilisent `/export` (metrics / csv_edges) sur
 >   la vue du périmètre stats.
+> - **Graphiques** : `render_bars` / `render_histogram` / `render_matrix` (matplotlib) + kinds
+>   `bars`/`histogram`/`matrix` sur `/export`. Aperçu **inline au-dessus du tableau** (clic →
+>   image affichée tout de suite), téléchargement **PNG 300 DPI / SVG**. Tableau plafonné
+>   (défilement interne, en-têtes collants) pour rester navigable sur de grosses bases.
 >
-> **Reste** : **graphiques** (barres top-N, histogramme temporel, matrice de co-occurrence,
-> PNG/SVG matplotlib) ; **glossaire des métriques** — décrire *à terme* ce que mesurent degré,
+> **Reste** : **glossaire des métriques** — décrire *à terme* ce que mesurent degré,
 > intermédiarité (betweenness), vecteur propre, communautés… pour expliciter les chiffres
 > (info-bulles / page d'aide), afin que ce ne soit pas une boîte noire.
 

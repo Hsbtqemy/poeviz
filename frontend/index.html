@@ -306,10 +306,25 @@
           <span class="stats-exp">
             <button class="btn-mini" id="exp-tab-csv" title="Exporter le tableau courant en CSV">⤓ CSV</button>
             <button class="btn-mini" id="exp-tab-xlsx" title="Exporter le tableau courant en XLSX">⤓ XLSX</button>
+            <span class="stats-exp-sep"></span>
+            <button class="btn-mini" id="exp-bars" title="Barres : top entités par nombre de liens">📊 Barres</button>
+            <button class="btn-mini" id="exp-histo" title="Histogramme : entités par année moyenne">📊 Histo</button>
+            <button class="btn-mini" id="exp-matrix" title="Matrice de co-occurrence des principales entités">📊 Matrice</button>
           </span>
         </div>
         <div class="seg" id="stats-grain">
           <span data-v="entites" class="on">Entités</span><span data-v="paires">Paires</span><span data-v="ensemble">Ensemble</span>
+        </div>
+        <div id="stats-chart-block" class="chart-block" style="display:none">
+          <div class="stats-block-head">
+            <div class="grp-label" id="chart-title">Graphique</div>
+            <span class="stats-exp">
+              <button class="btn-mini" id="chart-dl-png" title="Télécharger en PNG 300 DPI">⤓ PNG</button>
+              <button class="btn-mini" id="chart-dl-svg" title="Télécharger en SVG vectoriel">⤓ SVG</button>
+              <button class="btn-mini" id="chart-hide" title="Masquer l'aperçu">✕</button>
+            </span>
+          </div>
+          <div id="chart-preview" class="chart-preview"></div>
         </div>
         <div id="stats-table" class="stats-table"></div>
       </section>
