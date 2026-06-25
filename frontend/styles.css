@@ -286,6 +286,49 @@ button{font-family:inherit;cursor:pointer}
 .filters-count{margin-left:6px;font-size:10px;font-weight:bold;color:#fff;background:var(--sel);
   border-radius:10px;padding:1px 6px}
 .filters-count:empty{display:none}
+
+/* ===== Écran Statistiques (recouvre la zone carte, barre latérale conservée) ===== */
+.stats-screen{position:fixed;top:0;right:0;bottom:0;left:var(--rail-w);z-index:45;
+  background:var(--paper);display:flex;flex-direction:column;overflow:hidden}
+.stats-head{display:flex;align-items:center;gap:14px;padding:12px 20px;
+  border-bottom:1px solid var(--line);background:rgba(251,249,244,.92)}
+.stats-head h2{font-size:20px}
+.stats-meta{font-size:12px;color:var(--muted);flex:1;font-family:system-ui,Arial,sans-serif}
+.stats-body{flex:1;overflow-y:auto;padding:18px 22px;display:flex;flex-direction:column;gap:24px}
+/* « Ce qui ressort » : une carte par CATÉGORIE (en-tête + items + voir plus) */
+.stats-traits{display:grid;grid-template-columns:repeat(auto-fill,minmax(370px,1fr));gap:12px;
+  margin-top:10px;align-items:start}
+.trait-group{border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px 13px 12px}
+.tg-head{font-size:10.5px;text-transform:uppercase;letter-spacing:1px;color:var(--sel);
+  font-weight:bold;font-family:system-ui,Arial,sans-serif;display:flex;align-items:center;gap:8px}
+.tg-count{color:var(--muted);font-weight:normal}
+.trait-row{font-size:12.5px;line-height:1.4;padding:6px 0;display:flex;gap:10px;align-items:baseline}
+.trait-row + .trait-row{border-top:1px solid #F0ECE3}
+.tr-text{flex:1}
+.tr-text b{font-weight:600}
+.trait-row .t-see{flex:none;border:none;background:none;color:var(--sel);cursor:pointer;
+  font-size:11px;font-family:system-ui,Arial,sans-serif;white-space:nowrap;padding:0}
+.trait-row .t-see:hover{text-decoration:underline}
+.tg-hidden{display:none}
+.tg-more{font-size:11px;color:var(--sel);cursor:pointer;margin-top:8px;display:inline-block;
+  font-family:system-ui,Arial,sans-serif}
+.tg-more:hover{text-decoration:underline}
+.stats-table{margin-top:11px;overflow-x:auto}
+table.stab{border-collapse:collapse;width:100%;font-size:12.5px;font-family:system-ui,Arial,sans-serif}
+table.stab th{text-align:left;padding:6px 10px;border-bottom:2px solid var(--line);cursor:pointer;
+  color:var(--ink);white-space:nowrap;user-select:none}
+table.stab th:hover{color:var(--sel)}
+table.stab th.num,table.stab td.num{text-align:right;font-variant-numeric:tabular-nums}
+table.stab td{padding:5px 10px;border-bottom:1px solid var(--line)}
+table.stab tbody tr{cursor:pointer}
+table.stab tbody tr:hover{background:#fff}
+.stab-pill{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:middle;margin-right:6px}
+.stats-ensemble{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-top:11px}
+.stat-card{border:1px solid var(--line);border-radius:9px;background:#fff;padding:12px 14px}
+.stat-card .k{font-size:9.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);
+  font-weight:bold;font-family:system-ui,Arial,sans-serif}
+.stat-card .v{font-size:22px;margin-top:3px;font-variant-numeric:tabular-nums}
+.stats-empty{color:var(--muted);font-size:12.5px;font-style:italic;padding:8px 0}
 /* barre de focalisation (mode ego) : superposée en haut du canvas */
 /* centrée dans la zone À GAUCHE du panneau de détail (toujours ouvert en focalisation),
    pour ne pas passer dessous (le panneau est superposé à droite) */

@@ -22,7 +22,7 @@ from typing import Any
 
 import networkx as nx
 
-TOP = 6  # nb de traits gardés par signal
+TOP = 5  # nb de traits gardés par signal (les plus forts ; le front en montre 3 + « voir plus »)
 
 
 def compute_salience(P: nx.Graph, metrics: dict[str, Any],

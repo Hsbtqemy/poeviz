@@ -235,8 +235,16 @@ La salience est surtout du **post-traitement** (écarts à la médiane) par-dess
 
 ## T3 — Page Statistiques : « Ce qui ressort » + exploration par grain
 
-**But.** La page. **Salience-first** : on ouvre sur ce qui dépasse, puis on creuse par grain.
-Couplée aux filtres T1 ; bascule **vue courante / base entière**.
+> **État : livré.** Bouton « Statistiques » → écran recouvrant la carte (barre latérale +
+> filtres conservés à gauche). **Ce qui ressort** : `/salience` rendu en **une carte par
+> catégorie** (en-tête + 3 items + « voir plus »), entités et écarts **en gras** ; chaque
+> item a « → carte » (ferme, recentre, sélectionne). Bascule **Vue courante / Base entière**
+> (`statsQuery` : la base omet années/degré min/facettes). **Explorer par grain** :
+> *Entités* (tableau triable : liens, ouvrages, intermédiarité, communauté), *Paires*
+> (co-occurrences, poids), *Ensemble* (densité, communautés, composantes, pivots) — toutes
+> issues de `/graph` du périmètre. Couplage filtres : `maybeSyncStats` recalcule en direct
+> quand l'écran est ouvert en Vue courante. **Reste (T6)** : exports (tableaux / image /
+> texte) ; **Au hasard** = T5.
 
 **Croquis (forme, pas pixel-perfect) :**
 

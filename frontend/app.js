@@ -42,6 +42,11 @@
     search: "",
     selected: null,
     lastGraph: null,
+    statsScope: "view",           // périmètre des stats : vue courante | base entière
+    statsGrain: "entites",        // onglet d'exploration : entites | paires | ensemble
+    statsGraph: null,             // données /graph du périmètre stats courant
+    statsSort: { col: null, dir: -1 },
+    lastFocusBeforeStats: null,
     layoutSig: null,
     // Dernière configuration appliquée → restaurée si on rouvre l'écran des rôles.
     appliedRoles: null,
@@ -76,7 +81,9 @@
    "snapshots-btn", "snapshots-overlay", "snap-close", "snap-interval",
    "snap-cumulative", "snap-status", "snap-grid",
    "chrono-btn", "chrono-overlay", "chrono-close", "chrono-title", "chrono-sub",
-   "chrono-pivot", "chrono-color", "chrono-status", "chrono-scroll"
+   "chrono-pivot", "chrono-color", "chrono-status", "chrono-scroll",
+   "stats-btn", "stats-close", "stats-screen", "stats-scope", "stats-meta",
+   "stats-traits", "stats-grain", "stats-table"
   ].forEach((id) => { el[id] = $(id); });
 
   // Nom de la charnière (« objet / objets » par défaut). cap() capitalise pour
@@ -976,6 +983,7 @@
     initExport();
     initSnapshots();
     initChronology();
+    initStats();
   }
 
   // ---------------------------------------------------------- rafraîchir la carte
@@ -1072,6 +1080,7 @@
       }
       if (State.selected && !data.nodes.find((n) => n.id === State.selected)) deselect();
       if (!State.playing) hintDegenerate(data);
+      maybeSyncStats();    // stats ouvertes en « vue courante » → suivent les filtres
     } catch (e) { flash("Erreur : " + e.message); }
   }
 
@@ -1244,6 +1253,236 @@
     el["detail"].classList.add("open");
   }
   function stat(k, v) { return `<div class="stat"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`; }
+
+  // =============================================================== STATISTIQUES (T3)
+  // Périmètre : "view" reprend les filtres de la carte ; "base" les ignore (recensement).
+  function statsQuery(scope) {
+    const p = new URLSearchParams();
+    p.set("session_id", State.sessionId);
+    p.set("layers", [...State.layersOn].join(","));
+    p.set("connectors", [...State.connectors].join(","));
+    p.set("link_mode", State.linkMode);
+    p.set("show_hinge", State.showHinge);
+    p.set("size_by", State.sizeBy);
+    if (State.pivot) p.set("pivot", State.pivot);
+    if (scope === "view") {                          // base = on ignore les filtres
+      if (State.yearMin != null) { p.set("year_min", State.yearMin); p.set("year_max", State.yearMax); }
+      if (State.focus) { p.set("focus", State.focus); p.set("hops", State.focusHops); }
+      if (State.degreeMin > 0) p.set("degree_min", State.degreeMin);
+      const facetObj = {};
+      Object.keys(State.facets || {}).forEach((c) => { if (facetIsActive(c)) facetObj[c] = [...State.facets[c]]; });
+      if (Object.keys(facetObj).length) p.set("facets", JSON.stringify(facetObj));
+    }
+    return p.toString();
+  }
+
+  function statsOpen() { return !el["stats-screen"].classList.contains("hidden"); }
+  function openStats() {
+    el["stats-screen"].classList.remove("hidden");
+    el["stats-screen"].setAttribute("aria-hidden", "false");
+    loadStats();
+  }
+  function closeStats() {
+    el["stats-screen"].classList.add("hidden");
+    el["stats-screen"].setAttribute("aria-hidden", "true");
+  }
+
+  async function loadStats() {
+    const scope = State.statsScope;
+    const q = statsQuery(scope);
+    el["stats-traits"].innerHTML = `<div class="stats-empty">Calcul…</div>`;
+    el["stats-table"].innerHTML = "";
+    try {
+      const [sal, gdata] = await Promise.all([
+        getJSON(`/salience?${q}&scope=${scope}`),
+        getJSON(`/graph?${q}`),
+      ]);
+      State.statsGraph = gdata;
+      const s = gdata.summary;
+      el["stats-meta"].textContent =
+        `${s.n_nodes} nœuds · ${s.n_edges} liens · ${s.n_communities} communautés`;
+      renderTraits(sal);
+      renderStatsTable();
+    } catch (e) {
+      el["stats-traits"].innerHTML = `<div class="stats-empty">Erreur : ${esc(e.message)}</div>`;
+    }
+  }
+
+  const KIND_LABEL = {
+    prolifique: "Se détachent", passeur: "Passeurs (relient des mondes)",
+    paire: "Paires récurrentes", pont: "Ponts uniques", communaute: "Communautés",
+    temps: "Temps", anomalie: "Anomalies",
+  };
+  // Met en évidence ce qui est saillant : entités entre guillemets + écarts chiffrés.
+  function emphasize(text) {
+    return esc(text)
+      .replace(/«\s*([^»]+?)\s*»/g, "« <b>$1</b> »")
+      .replace(/(\d+(?:[.,]\d+)?×)/g, "<b>$1</b>");
+  }
+
+  const SHOWN_PER_GROUP = 3;
+  function renderTraits(sal) {
+    const traits = (sal && sal.traits) || [];
+    el["stats-traits"].innerHTML = "";
+    if (!traits.length) {
+      el["stats-traits"].innerHTML = `<div class="stats-empty">Rien de saillant dans ce périmètre.</div>`;
+      return;
+    }
+    // Une carte par CATÉGORIE (pas par trait) → on voit la structure, pas un mur.
+    const order = [], byKind = {};
+    traits.forEach((t) => { if (!byKind[t.kind]) { byKind[t.kind] = []; order.push(t.kind); } byKind[t.kind].push(t); });
+    order.forEach((kind) => {
+      const items = byKind[kind];
+      const group = document.createElement("div");
+      group.className = "trait-group";
+      group.innerHTML = `<div class="tg-head">${esc(KIND_LABEL[kind] || kind)}` +
+        `<span class="tg-count">${items.length}</span></div>`;
+      items.forEach((t, i) => {
+        const row = document.createElement("div");
+        row.className = "trait-row" + (i >= SHOWN_PER_GROUP ? " tg-hidden" : "");
+        row.innerHTML = `<span class="tr-text">${emphasize(t.detail)}</span>`;
+        if (t.refs && t.refs.length) {
+          const b = document.createElement("button");
+          b.className = "t-see"; b.textContent = "→ carte";
+          b.addEventListener("click", () => seeOnMap(t.refs));
+          row.appendChild(b);
+        }
+        group.appendChild(row);
+      });
+      if (items.length > SHOWN_PER_GROUP) {
+        const more = document.createElement("span");
+        more.className = "tg-more";
+        more.textContent = `+ ${items.length - SHOWN_PER_GROUP} autres`;
+        more.addEventListener("click", () => {
+          group.querySelectorAll(".tg-hidden").forEach((r) => r.classList.remove("tg-hidden"));
+          more.remove();
+        });
+        group.appendChild(more);
+      }
+      el["stats-traits"].appendChild(group);
+    });
+  }
+
+  function renderStatsTable() {
+    const g = State.statsGraph;
+    if (!g) return;
+    if (State.statsGrain === "entites") renderEntites(g);
+    else if (State.statsGrain === "paires") renderPaires(g);
+    else renderEnsemble(g);
+  }
+
+  function sortRows(rows, col, dir) {
+    return rows.slice().sort((a, b) => {
+      const x = a[col], y = b[col];
+      if (typeof x === "number" && typeof y === "number") return (x - y) * dir;
+      return String(x).localeCompare(String(y)) * dir;
+    });
+  }
+  // cols : [{key,label,num?,html?}]. En-tête cliquable → tri.
+  function buildTable(cols, rows, onRow) {
+    const sort = State.statsSort;
+    let display = rows;
+    if (sort.col && cols.some((c) => c.key === sort.col)) display = sortRows(rows, sort.col, sort.dir);
+    const t = document.createElement("table"); t.className = "stab";
+    const htr = document.createElement("tr");
+    cols.forEach((c) => {
+      const th = document.createElement("th"); th.textContent = c.label;
+      if (c.num) th.className = "num";
+      th.addEventListener("click", () => {
+        State.statsSort = { col: c.key, dir: sort.col === c.key ? -sort.dir : (c.num ? -1 : 1) };
+        renderStatsTable();
+      });
+      htr.appendChild(th);
+    });
+    const thead = document.createElement("thead"); thead.appendChild(htr); t.appendChild(thead);
+    const tb = document.createElement("tbody");
+    display.forEach((r) => {
+      const tr = document.createElement("tr");
+      cols.forEach((c) => {
+        const td = document.createElement("td");
+        if (c.num) td.className = "num";
+        if (c.html) td.innerHTML = c.html(r); else td.textContent = r[c.key];
+        tr.appendChild(td);
+      });
+      if (onRow) tr.addEventListener("click", () => onRow(r));
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);
+    el["stats-table"].innerHTML = ""; el["stats-table"].appendChild(t);
+  }
+
+  function renderEntites(g) {
+    const rows = g.nodes.filter((n) => n.kind === "entity").map((n) => ({
+      id: n.id, label: n.label, type: n.type, color: n.color,
+      liens: n.degree_raw, oeuvres: n.work_count, inter: round3(n.betweenness), comm: n.community,
+    }));
+    buildTable([
+      { key: "label", label: "Entité", html: (r) => `<span class="stab-pill" style="background:${r.color}"></span>${esc(r.label)}` },
+      { key: "type", label: "Type" },
+      { key: "liens", label: "Liens", num: true },
+      { key: "oeuvres", label: cap(unitP()), num: true },
+      { key: "inter", label: "Intermédiarité", num: true },
+      { key: "comm", label: "Communauté", num: true },
+    ], rows, (r) => seeOnMap([r.id]));
+  }
+
+  function renderPaires(g) {
+    const lab = {}; g.nodes.forEach((n) => { lab[n.id] = n.label; });
+    const rows = g.edges.map((e) => ({
+      a: lab[e.source] || e.source, b: lab[e.target] || e.target,
+      poids: e.weight, src: e.source, tgt: e.target,
+    }));
+    if (!State.statsSort.col) State.statsSort = { col: "poids", dir: -1 };
+    buildTable([
+      { key: "a", label: "Entité A" },
+      { key: "b", label: "Entité B" },
+      { key: "poids", label: `${cap(unitP())} partagés`, num: true },
+    ], rows, (r) => seeOnMap([r.src, r.tgt]));
+  }
+
+  function renderEnsemble(g) {
+    const s = g.summary;
+    const cards = [
+      ["Nœuds", s.n_nodes], ["Liens", s.n_edges], ["Communautés", s.n_communities],
+      ["Composantes", s.n_components], ["Densité", s.density], ["Degré moyen", s.avg_degree],
+    ];
+    let html = `<div class="stats-ensemble">` +
+      cards.map(([k, v]) => `<div class="stat-card"><div class="k">${esc(k)}</div><div class="v">${v}</div></div>`).join("") +
+      `</div>`;
+    const top = s.top_central || [];
+    if (top.length) html += `<div class="grp-label" style="margin-top:20px">Pivots (top centralité)</div>` +
+      `<div class="stats-table" id="top-central"></div>`;
+    el["stats-table"].innerHTML = html;
+    if (top.length) {
+      const host = document.getElementById("top-central");
+      host.innerHTML = `<table class="stab"><thead><tr><th>Entité</th><th>Type</th><th class="num">Score</th></tr></thead><tbody>` +
+        top.map((c) => `<tr data-id="${esc(c.id)}"><td>${esc(c.label)}</td><td>${esc(c.type || "")}</td><td class="num">${round3(c.value)}</td></tr>`).join("") +
+        `</tbody></table>`;
+      host.querySelectorAll("tr[data-id]").forEach((tr) => tr.addEventListener("click", () => seeOnMap([tr.dataset.id])));
+    }
+  }
+  function round3(x) { return x == null ? "" : Math.round(x * 1000) / 1000; }
+
+  function seeOnMap(refs) {
+    if (!refs || !refs.length) return;
+    closeStats();
+    requestAnimationFrame(() => {
+      const inView = State.lastGraph && State.lastGraph.nodes.some((n) => n.id === refs[0]);
+      if (!inView) { flash("Ce nœud est hors de la vue carte courante (filtres / base)."); return; }
+      NetView.centerOnNodes(refs.filter((id) => State.lastGraph.nodes.some((n) => n.id === id)));
+      if (refs.length === 1) selectNode(refs[0]);
+    });
+  }
+
+  // Si l'écran stats est ouvert en « vue courante », il suit les changements de filtres.
+  function maybeSyncStats() { if (statsOpen() && State.statsScope === "view") loadStats(); }
+
+  function initStats() {
+    el["stats-btn"].addEventListener("click", openStats);
+    el["stats-close"].addEventListener("click", closeStats);
+    wireSeg(el["stats-scope"], (v) => { State.statsScope = v; State.statsSort = { col: null, dir: -1 }; loadStats(); });
+    wireSeg(el["stats-grain"], (v) => { State.statsGrain = v; State.statsSort = { col: null, dir: -1 }; renderStatsTable(); });
+  }
 
   // ------------------------------------------------------------------ export
   function initExport() {
