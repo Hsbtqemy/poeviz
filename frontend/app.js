@@ -1164,6 +1164,24 @@
   }
   // Saut explicite depuis la fiche (voisin de la projection) : continue la chaîne.
   function parcoursJump(id) { selectNode(id, { fromParcours: true }); NetView.centerOnNodes([id]); }
+
+  // Parcours AU HASARD (T5 complet) : marche aléatoire depuis `startId`, saut après saut
+  // vers un voisin non encore visité (jusqu'à ~6 pas ou impasse), puis on rejoue le chemin.
+  const RW_STEPS = 6;
+  function randomWalkFrom(startId) {
+    const chain = [startId];
+    for (let i = 0; i < RW_STEPS; i++) {
+      const head = chain[chain.length - 1];
+      const neigh = projectedNeighbors(head).filter((n) => !chain.includes(n.id));
+      if (!neigh.length) break;
+      chain.push(neigh[Math.floor(Math.random() * neigh.length)].id);
+    }
+    if (chain.length < 2) { flash("Pas de voisin pour cheminer au hasard."); return; }
+    stopParcoursPlay();
+    State.parcours = chain; State.selected = chain[chain.length - 1];
+    highlightParcours(); updateParcoursBar();
+    parcoursPlay();                       // révèle le chemin inattendu pas à pas
+  }
   function parcoursBack() {
     if (State.parcours.length <= 1) { deselect(); return; }
     State.parcours.pop();
@@ -1395,7 +1413,9 @@
     if (!State.focus) {
       const neigh = projectedNeighbors(d.id).filter((n) => !State.parcours.includes(n.id));
       if (neigh.length) {
-        cont = `<div class="cont-lab">Continuer le parcours →</div><div class="cont-chips">` +
+        cont = `<div class="cont-head"><span class="cont-lab">Continuer le parcours →</span>` +
+          `<button class="rw-btn" type="button" title="Marche aléatoire de quelques pas à partir d'ici">🔀 au hasard</button></div>` +
+          `<div class="cont-chips">` +
           neigh.slice(0, 40).map((n) =>
             `<span class="cont-chip" data-id="${esc(n.id)}" style="--c:${n.color || "#8A857B"}">${esc(n.label)}</span>`).join("") +
           (neigh.length > 40 ? `<span class="cont-more">+${neigh.length - 40}</span>` : "") +
@@ -1409,6 +1429,8 @@
     if (fb) fb.addEventListener("click", () => (focusing ? exitFocus() : enterFocus(d.id)));
     el["dbody"].querySelectorAll(".cont-chip").forEach((c) =>
       c.addEventListener("click", () => parcoursJump(c.dataset.id)));
+    const rw = el["dbody"].querySelector(".rw-btn");
+    if (rw) rw.addEventListener("click", () => randomWalkFrom(d.id));
     el["detail"].classList.add("open");
   }
   function stat(k, v) { return `<div class="stat"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`; }
