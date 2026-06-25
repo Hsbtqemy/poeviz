@@ -303,7 +303,9 @@ def build_master_graph(df, roles: dict[str, str], separators: list[str],
 
 # Au-delà de ce nombre de valeurs distinctes, une colonne n'est pas activable comme
 # nœud/connecteur (trop fine, trop lourde) : proposée dans le panneau mais désactivée.
-MAX_NODE_VALUES = 300
+# (Relevé de 300 à 500 : des entités réelles type « traducteurs » dépassent souvent
+# 300 sur de vraies bases ; les positions/métriques passent désormais à l'échelle.)
+MAX_NODE_VALUES = 500
 
 
 def _col_values(cell, role, separators) -> list[str]:

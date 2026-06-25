@@ -17,6 +17,14 @@ exports/
 # Configuration locale / secrets (le modèle deploy/.env.example reste suivi)
 .env
 
+# Données réelles déposées dans data/ : NE PAS pousser (le dépôt est public).
+# Seuls les fichiers de démonstration restent suivis.
+data/*.xlsx
+!data/traductions_demo.xlsx
+!data/oeuvres_vo_vf_demo.xlsx
+# Fichiers de verrou Excel (~$...)
+~$*
+
 # Tests e2e (puppeteer + node_modules volumineux)
 .e2e/
 
