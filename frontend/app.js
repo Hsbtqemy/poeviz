@@ -89,6 +89,7 @@
    "chrono-pivot", "chrono-color", "chrono-status", "chrono-scroll",
    "stats-btn", "stats-close", "stats-screen", "stats-scope", "stats-meta",
    "stats-traits", "stats-grain", "stats-table", "hasard-btn", "hasard-btn-stats",
+   "glossaire-btn", "glossaire-overlay", "gloss-list", "gloss-close",
    "exp-synth", "exp-tab-csv", "exp-tab-xlsx", "exp-bars", "exp-histo", "exp-matrix",
    "stats-chart-block", "chart-title", "chart-preview", "chart-dl-png", "chart-dl-svg", "chart-hide"
   ].forEach((id) => { el[id] = $(id); });
@@ -1582,6 +1583,7 @@
     cols.forEach((c) => {
       const th = document.createElement("th"); th.textContent = c.label;
       if (c.num) th.className = "num";
+      if (c.tip) th.title = c.tip + " (voir « ? Glossaire »)";
       th.addEventListener("click", () => {
         State.statsSort = { col: c.key, dir: sort.col === c.key ? -sort.dir : (c.num ? -1 : 1) };
         renderStatsTable();
@@ -1613,10 +1615,10 @@
     buildTable([
       { key: "label", label: "Entité", html: (r) => `<span class="stab-pill" style="background:${r.color}"></span>${esc(r.label)}` },
       { key: "type", label: "Type" },
-      { key: "liens", label: "Liens", num: true },
-      { key: "oeuvres", label: cap(unitP()), num: true },
-      { key: "inter", label: "Intermédiarité", num: true },
-      { key: "comm", label: "Communauté", num: true },
+      { key: "liens", label: "Liens", num: true, tip: "Connexions directes dans la vue courante." },
+      { key: "oeuvres", label: cap(unitP()), num: true, tip: `Nombre de ${unitP()} de l'entité.` },
+      { key: "inter", label: "Intermédiarité", num: true, tip: "Présence sur les chemins courts entre les autres — un « passeur »." },
+      { key: "comm", label: "Communauté", num: true, tip: "Identifiant du groupe (communauté Louvain), pas un classement." },
     ], rows, (r) => seeOnMap([r.id]));
   }
 
@@ -1637,11 +1639,15 @@
   function renderEnsemble(g) {
     const s = g.summary;
     const cards = [
-      ["Nœuds", s.n_nodes], ["Liens", s.n_edges], ["Communautés", s.n_communities],
-      ["Composantes", s.n_components], ["Densité", s.density], ["Degré moyen", s.avg_degree],
+      ["Nœuds", s.n_nodes, "Entités affichées dans la vue."],
+      ["Liens", s.n_edges, "Arêtes de la vue (co-occurrences)."],
+      ["Communautés", s.n_communities, "Groupes densément reliés (Louvain)."],
+      ["Composantes", s.n_components, "Morceaux disjoints du réseau."],
+      ["Densité", s.density, "Part des liens possibles réellement présents (0 à 1)."],
+      ["Degré moyen", s.avg_degree, "Nombre moyen de liens par nœud."],
     ];
     let html = `<div class="stats-ensemble">` +
-      cards.map(([k, v]) => `<div class="stat-card"><div class="k">${esc(k)}</div><div class="v">${v}</div></div>`).join("") +
+      cards.map(([k, v, tip]) => `<div class="stat-card" title="${esc(tip || "")}"><div class="k">${esc(k)}</div><div class="v">${v}</div></div>`).join("") +
       `</div>`;
     const top = s.top_central || [];
     if (top.length) html += `<div class="grp-label" style="margin-top:20px">Pivots (top centralité)</div>` +
@@ -1767,9 +1773,32 @@
     State.chartKind = null;
   }
 
+  // Glossaire des métriques : texte factuel, généré localement (rien d'opaque).
+  function glossaryEntries() {
+    const u = unitP();
+    return [
+      ["Degré (liens)", "Nombre de connexions directes du nœud dans la vue courante. Élevé = entité reliée à beaucoup d'autres (collabore largement)."],
+      ["Intermédiarité (betweenness)", "À quel point le nœud se trouve sur les chemins les plus courts entre les autres. Élevé = « passeur » qui relie des groupes éloignés ; le retirer fragmenterait le réseau. Sur les grands graphes, estimée par échantillonnage (déterministe)."],
+      ["Vecteur propre (eigenvector)", "Importance pondérée par celle des voisins : être relié à des nœuds eux-mêmes très reliés compte davantage. Une centralité de « prestige »."],
+      ["Communauté", "Groupe de nœuds plus densément reliés entre eux qu'avec le reste (détection Louvain, déterministe). Le numéro est un simple identifiant de groupe, pas un classement."],
+      ["Densité", "Proportion des liens possibles réellement présents : 0 = aucun lien, 1 = tous les nœuds reliés deux à deux."],
+      ["Composantes", "Nombre de morceaux disjoints du réseau (sous-ensembles sans aucun lien entre eux)."],
+      [`${cap(u)} (charnières)`, `Nombre de ${u} (lignes du tableur) auxquels l'entité participe.`],
+    ];
+  }
+  function openGlossaire() {
+    el["gloss-list"].innerHTML = glossaryEntries().map(([t, d]) =>
+      `<div class="gloss-item"><div class="gt">${esc(t)}</div><div class="gd">${esc(d)}</div></div>`).join("");
+    el["glossaire-overlay"].classList.remove("hidden");
+  }
+  function closeGlossaire() { el["glossaire-overlay"].classList.add("hidden"); }
+
   function initStats() {
     el["stats-btn"].addEventListener("click", openStats);
     el["stats-close"].addEventListener("click", closeStats);
+    el["glossaire-btn"].addEventListener("click", openGlossaire);
+    el["gloss-close"].addEventListener("click", closeGlossaire);
+    el["glossaire-overlay"].addEventListener("click", (e) => { if (e.target === el["glossaire-overlay"]) closeGlossaire(); });
     el["hasard-btn"].addEventListener("click", randomDiscover);
     el["hasard-btn-stats"].addEventListener("click", randomDiscover);
     el["exp-synth"].addEventListener("click", exportSalienceText);

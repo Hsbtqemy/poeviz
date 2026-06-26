@@ -339,6 +339,12 @@ table.stab tbody tr:hover{background:#fff}
   font-weight:bold;font-family:system-ui,Arial,sans-serif}
 .stat-card .v{font-size:22px;margin-top:3px;font-variant-numeric:tabular-nums}
 .stats-empty{color:var(--muted);font-size:12.5px;font-style:italic;padding:8px 0}
+/* glossaire des métriques */
+.gloss-modal{max-width:560px}
+.gloss-list{display:flex;flex-direction:column;gap:13px;margin-top:10px;max-height:62vh;overflow-y:auto}
+.gloss-item .gt{font-weight:bold;font-size:13px;color:var(--ink)}
+.gloss-item .gd{font-size:12.5px;color:var(--ink);line-height:1.45;margin-top:2px;
+  font-family:system-ui,Arial,sans-serif}
 /* barre de focalisation (mode ego) : superposée en haut du canvas */
 /* centrée dans la zone À GAUCHE du panneau de détail (toujours ouvert en focalisation),
    pour ne pas passer dessous (le panneau est superposé à droite) */

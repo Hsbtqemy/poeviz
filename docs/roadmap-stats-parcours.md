@@ -389,9 +389,12 @@ fait côté serveur (sinon front pur sur les données de `/graph`).
 >   image affichée tout de suite), téléchargement **PNG 300 DPI / SVG**. Tableau plafonné
 >   (défilement interne, en-têtes collants) pour rester navigable sur de grosses bases.
 >
-> **Reste** : **glossaire des métriques** — décrire *à terme* ce que mesurent degré,
-> intermédiarité (betweenness), vecteur propre, communautés… pour expliciter les chiffres
-> (info-bulles / page d'aide), afin que ce ne soit pas une boîte noire.
+> - **Glossaire des métriques** : bouton « ? Glossaire » (en-tête stats) → modale factuelle
+>   (degré, intermédiarité, vecteur propre, communauté, densité, composantes, ouvrages) +
+>   info-bulles au survol des colonnes (tableau Entités) et des cartes (Ensemble). Texte
+>   généré localement, rien d'opaque.
+>
+> **T6 complet.**
 
 **But.** Sortir les stats et les parcours en **tableaux, images, et texte** — tout **local**.
 

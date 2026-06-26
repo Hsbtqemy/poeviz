@@ -297,6 +297,7 @@
         <span data-v="view" class="on">Vue courante</span><span data-v="base">Base entière</span>
       </div>
       <span class="stats-meta" id="stats-meta"></span>
+      <button class="btn" id="glossaire-btn" title="Que mesurent les chiffres ?">? Glossaire</button>
       <button class="btn" id="hasard-btn-stats" title="Ouvrir une entité au hasard (découverte)">🎲 Au hasard</button>
       <button class="btn" id="stats-close">✕ Retour à la carte</button>
     </div>
@@ -338,6 +339,16 @@
       </section>
     </div>
   </section>
+</div>
+
+<!-- ===================== Glossaire des métriques ===================== -->
+<div id="glossaire-overlay" class="overlay hidden">
+  <div class="modal gloss-modal">
+    <h2>Glossaire des métriques</h2>
+    <div class="sub">Ce que mesurent les chiffres de la page — rien n'est une boîte noire.</div>
+    <div id="gloss-list" class="gloss-list"></div>
+    <button class="btn" id="gloss-close" style="margin-top:14px">Fermer</button>
+  </div>
 </div>
 
 <!-- ===================== Modale d'export ===================== -->
