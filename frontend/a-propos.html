@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>À propos méthodologique — Cartographie de métadonnées</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%231D8A68'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="about-body">
+<main class="about-page">
+  <nav class="about-toc" aria-label="Sommaire">
+    <p class="toc-title">Sommaire</p>
+    <a href="#presentation"><span class="toc-num">01</span> Présentation</a>
+    <a href="#specifications"><span class="toc-num">02</span> Spécifications</a>
+    <a href="#organisation"><span class="toc-num">03</span> Organisation technique</a>
+    <a href="#bibliotheques"><span class="toc-num">04</span> Bibliothèques</a>
+    <a href="#methodologie"><span class="toc-num">05</span> Méthodologie</a>
+    <a href="#vocabulaire"><span class="toc-num">06</span> Vocabulaire &amp; mesures</a>
+  </nav>
+
+  <div class="about-doc">
+  <a class="about-back" href="index.html">← Retour à l'outil</a>
+
+  <h1>À propos méthodologique</h1>
+  <p class="about-sub">Comment l'outil est conçu, ce qu'il sait faire, et selon quels
+  principes — des données tabulaires aux cartes en réseau.</p>
+  <p class="about-credit">
+    Cet outil a été développé dans le cadre d'un travail de recherche porté par
+    <b>Teona Farmatu</b>, au sein du laboratoire <b>FoReLLIS</b>, par <b>Hugo Semilly</b>.
+  </p>
+
+  <section class="about-sec" id="presentation">
+    <h2>Présentation</h2>
+    <p class="lead">Cet outil transforme un <b>tableur Excel</b> de métadonnées (livres,
+    parutions, traductions…) en une <b>cartographie interactive en réseau</b>. Les entités
+    qu'il contient — auteurs, traducteurs, éditeurs, langues, lieux… — deviennent des
+    <b>nœuds</b>, reliés entre eux selon les ouvrages qu'ils partagent. On explore la carte,
+    on la filtre, on la recompose et on l'exporte.</p>
+    <p>Le principe est qu'aucune relation n'existe directement dans les données : deux entités
+    sont reliées parce qu'elles figurent sur la <b>même ligne</b> du tableur. Une ligne (un
+    livre, une traduction, un contrat…) fait office de <b>charnière</b> entre tout ce qu'elle
+    réunit. À partir de cette seule relation universelle — « être sur la même ligne » — on
+    peut projeter quantité de réseaux différents : co-auteurs, auteur ↔ éditeur,
+    traducteur ↔ langue…</p>
+    <p>L'outil est <b>générique</b> : il ingère n'importe quel <code>.xlsx</code> de structure
+    raisonnable, détecte les colonnes, propose un rôle pour chacune, et laisse tout ajuster.
+    Son fil directeur est de <i>ne rien figer qui puisse être rendu réglable</i> — y compris
+    le nom de l'unité qui relie les entités. Il s'adresse aux travaux de recherche
+    (humanités numériques, bibliographie, études de traduction…) qui disposent de métadonnées
+    tabulaires et cherchent à en lire les structures relationnelles.</p>
+    <p><b>En entrée</b> : un fichier <code>.xlsx</code>. <b>En sortie</b> : une carte explorable
+    et des exports — image nette pour Word (PNG 300 DPI, SVG, PDF), <code>GEXF</code> pour
+    Gephi, tableaux <code>CSV</code>/<code>XLSX</code>, et des synthèses textuelles.</p>
+  </section>
+
+  <section class="about-sec" id="specifications">
+    <h2>Spécifications</h2>
+    <p>L'utilisateur dépose un tableur, ajuste les rôles des colonnes, puis explore la carte
+    produite. Les principales fonctionnalités :</p>
+
+    <h3>Rôles des colonnes</h3>
+    <ul>
+      <li><b>Nœud</b> — la colonne devient un type d'entité affiché (chaque valeur = un point).</li>
+      <li><b>Lien</b> — relie les nœuds sans être affichée (typiquement le <i>titre</i>, qui
+      nomme la ligne et relie auteur ↔ traducteur ↔ éditeur).</li>
+      <li><b>Masqué</b> — type d'entité présent mais non dessiné par défaut : affichable d'un
+      clic, et toujours dans les fiches.</li>
+      <li><b>Ignoré</b> — colonne écartée du graphe.</li>
+    </ul>
+    <p>Le <b>même champ</b> peut être nœud, lien ou masqué selon le choix → des cartes
+    différentes depuis la même donnée. On nomme aussi ici l'<b>unité-charnière</b> (« objet »
+    par défaut, ou un mot dérivé du nom de la feuille : « traduction », « film »…), et l'on
+    peut <b>regrouper</b> les lignes qui décrivent la même chose (une œuvre et sa traduction)
+    en une seule charnière.</p>
+
+    <h3>Graphe et projection</h3>
+    <ul>
+      <li><b>Couches à 3 états</b> — toute colonne se règle, en direct, sur <i>affiché</i>,
+      <i>relie</i> (invisible mais connecte) ou <i>masqué</i>, sans reconstruire le graphe.</li>
+      <li><b>Report / cut</b> — quand un nœud-pont est masqué, ses voisins se relient
+      directement (report) ou le lien se coupe (cut).</li>
+      <li><b>Organiser autour de</b> (pivot) — réorganise la disposition, ou centre seulement.</li>
+      <li><b>Focalisation</b> — un double-clic restreint la vue au voisinage d'un nœud (1–3
+      sauts), avec des centralités recalculées localement.</li>
+    </ul>
+
+    <h3>Exploration visuelle</h3>
+    <ul>
+      <li><b>Niveau de détail au zoom</b> — points colorés, puis points + étiquettes, puis
+      petites <b>cartes</b> (titre + 2-3 infos) ; mode forçable et épinglage.</li>
+      <li><b>Dispositions</b> — force, réseau temporel (axe = temps), axes au choix,
+      similarité (MDS), circulaire.</li>
+      <li><b>Couleur</b> par type, communauté ou époque ; <b>taille</b> par centralité.</li>
+      <li><b>Recherche</b>, <b>curseur temporel</b> (avec frise/histogramme), <b>lecture
+      animée</b> du temps, <b>instantanés</b> à plusieurs époques, vue <b>chronologie</b>.</li>
+    </ul>
+
+    <h3>Filtrer, lire, parcourir</h3>
+    <ul>
+      <li><b>Filtres</b> — par degré minimal et par facettes (valeurs gardées) sur n'importe
+      quelle colonne ; ils s'appliquent de la même façon à la carte, aux statistiques et aux
+      parcours.</li>
+      <li><b>Statistiques « ce qui ressort »</b> — des <b>traits saillants</b> calculés de
+      façon générique (entités prolifiques, passeurs, paires récurrentes, ponts, communautés,
+      dynamiques temporelles, anomalies), plus une exploration grain par grain (entités,
+      paires, ensemble).</li>
+      <li><b>Parcours et sérendipité</b> — un fil d'Ariane de proche en proche, un tirage
+      « au hasard », une marche aléatoire, et un bouton <b>Play</b> qui rejoue le chemin.</li>
+      <li><b>Glossaire</b> des métriques (degré, intermédiarité, vecteur propre, communauté…).</li>
+    </ul>
+
+    <h3>Exports</h3>
+    <ul>
+      <li><b>Image</b> — PNG 300 DPI, SVG vectoriel ou PDF, dimensions et étiquettes réglables.
+      Le rendu <i>correspond exactement à l'écran</i> (mêmes positions, couleurs, filtres).</li>
+      <li><b>GEXF</b> (réouverture dans Gephi), <b>CSV</b> nœuds / arêtes, <b>métriques</b>
+      CSV/XLSX, et des <b>synthèses textuelles</b> des traits saillants.</li>
+    </ul>
+  </section>
+
+  <section class="about-sec" id="organisation">
+    <h2>Organisation technique</h2>
+    <p>Le serveur ne tient <b>aucune base de données</b> : chaque fichier déposé vit en mémoire
+    le temps de la session, rangé dans un dictionnaire indexé par un identifiant. Fermer ou
+    redémarrer le serveur efface tout — c'est un outil d'exploration, pas un entrepôt.</p>
+    <p>À la validation des rôles, le backend construit <b>un seul graphe maître biparti</b>
+    (<code>entité ── ligne</code>) avec <i>networkx</i> ; ce graphe ne change plus. Tout ce
+    qu'on voit est une <b>projection</b> calculée à la volée (couches, pivot, report/cut,
+    fenêtre temporelle, filtres) — jamais une reconstruction, d'où l'instantanéité. Les
+    <b>positions</b> des nœuds sont calculées <b>une seule fois</b> (graine fixe,
+    reproductible) puis réutilisées partout, pour que la carte ne « saute » pas quand on
+    filtre.</p>
+
+    <h3>Découpage des modules</h3>
+    <ul>
+      <li><b>Backend</b> (Python / FastAPI) : <code>ingest.py</code> (lecture xlsx, profilage,
+      valeurs multiples), <code>graph.py</code> (graphe maître + projection), <code>analysis.py</code>
+      (centralités, communautés, densité), <code>salience.py</code> (traits saillants),
+      <code>export.py</code> (images, GEXF, CSV/XLSX), <code>main.py</code> (routes et sessions).</li>
+      <li><b>Frontend</b> (HTML/CSS/JS vanilla, sans framework) : <code>index.html</code>
+      (interface 3 zones), <code>app.js</code> (état, appels API, câblage des contrôles),
+      <code>render.js</code> (rendu Sigma.js, niveaux de détail, sélection, cartes).</li>
+      <li>Communication par une <b>API REST</b> en JSON ; le même serveur expose l'API <i>et</i>
+      sert le frontend.</li>
+    </ul>
+
+    <h3>Hébergement et confidentialité</h3>
+    <p>L'application est un service Python persistant (FastAPI/Uvicorn) derrière un
+    reverse-proxy (nginx + HTTPS), géré en <i>mono-process</i> (les sessions vivent en RAM).
+    Des garde-fous bornent l'usage : nombre de sessions plafonné (éviction des plus
+    anciennes), taille d'upload limitée, métriques mises en cache par vue. <b>Les données
+    restent sur le serveur</b> : rien n'est envoyé à des tiers, et le contenu des tableurs
+    n'est pas journalisé.</p>
+  </section>
+
+  <section class="about-sec" id="bibliotheques">
+    <h2>Bibliothèques</h2>
+    <h3>Backend (Python)</h3>
+    <ul>
+      <li><b>FastAPI</b> + <b>Uvicorn</b> — serveur web et API REST.</li>
+      <li><b>pandas</b> + <b>openpyxl</b> — lecture et profilage du <code>.xlsx</code>.</li>
+      <li><b>networkx</b> — graphe maître, projections, centralités.</li>
+      <li><b>python-louvain</b> — détection de communautés (repli <i>networkx</i> si absent).</li>
+      <li><b>matplotlib</b> — re-rendu des vues en PNG / SVG / PDF (et des graphiques de stats).</li>
+      <li><b>numpy</b> — calculs numériques d'appoint.</li>
+    </ul>
+    <h3>Frontend</h3>
+    <ul>
+      <li><b>Sigma.js v3</b> + <b>graphology</b> — rendu WebGL du réseau dans le navigateur.</li>
+      <li><b>graphology-layout-forceatlas2</b> — disposition force-directed.</li>
+    </ul>
+    <p class="note">Les librairies frontend sont <b>vendorisées</b> (versions figées, embarquées
+    dans le site) : aucun appel à un CDN, déploiement autonome.</p>
+  </section>
+
+  <section class="about-sec" id="methodologie">
+    <h2>Méthodologie</h2>
+    <p>La conception repose sur quelques principes constants :</p>
+    <ul>
+      <li><b>Générique avant tout.</b> Rien n'est codé en dur pour un fichier précis : seuils,
+      séparateurs, nom de l'unité sont des réglages, et tout est surchargeable depuis
+      l'interface.</li>
+      <li><b>Un seul graphe, des projections.</b> On construit le graphe complet une fois ;
+      toutes les vues en sont des filtrages à la volée.</li>
+      <li><b>La co-occurrence comme relation.</b> « Être sur la même ligne » est la seule
+      relation universelle d'un tableur ; le graphe biparti la matérialise.</li>
+      <li><b>Positions stables.</b> Calculées une fois, réutilisées partout → pas de saut de
+      nœuds quand on filtre, et une cohérence parfaite entre l'écran et l'image exportée.</li>
+      <li><b>Suggérer, pas imposer.</b> Le programme propose (rôles, nom d'unité) ; l'humain
+      décide. Le but est d'aider à lire la donnée, pas de la figer.</li>
+    </ul>
+    <p>Deux choix méritent d'être soulignés. D'abord, les <b>traits saillants</b> des
+    statistiques sont calculés à partir des <b>rôles</b> des colonnes, jamais de leur nom :
+    ils valent pour n'importe quel jeu de données et n'imposent aucune grille de lecture
+    spécifique. Ensuite, les <b>synthèses textuelles</b> sont produites <b>localement</b>, par
+    gabarit, à partir de la seule donnée mesurée — aucun service d'IA externe n'intervient.
+    L'outil restitue de la donnée brute mise en forme ; <b>la rédaction et l'interprétation
+    appartiennent à l'analyste</b>.</p>
+  </section>
+
+  <section class="about-sec" id="vocabulaire">
+    <h2>Vocabulaire &amp; mesures</h2>
+    <p>Quelques notions qui reviennent dans l'interface et les fiches. Chaque mesure est
+    accompagnée de la façon dont elle est calculée et de la manière de la lire. Les calculs
+    portent toujours sur le <b>graphe projeté</b> (la vue courante), jamais sur le graphe
+    maître complet.</p>
+
+    <h3>Les briques</h3>
+    <dl>
+      <dt>Entité (nœud)</dt>
+      <dd>Une valeur d'une colonne mise en rôle <i>nœud</i> — un auteur, un éditeur, une
+      langue… Chaque valeur distincte donne un point sur la carte.<a class="ref"
+      href="https://fr.wikipedia.org/wiki/Sommet_(théorie_des_graphes)" target="_blank" rel="noopener">Wikipédia</a></dd>
+
+      <dt>Charnière (ligne)</dt>
+      <dd>Une ligne du tableur (un livre, une traduction…). Elle ne s'affiche pas forcément,
+      mais elle <b>relie</b> toutes les entités qu'elle réunit. Son nom est réglable
+      (« objet » par défaut). C'est la seule relation réellement présente dans les données :
+      « figurer sur la même ligne ».</dd>
+
+      <dt>Graphe biparti</dt>
+      <dd>Le graphe maître ne contient que des liens <code>entité ── charnière</code> : deux
+      familles de nœuds, aucune arête à l'intérieur d'une même famille. Toutes les cartes en
+      dérivent.<a class="ref" href="https://fr.wikipedia.org/wiki/Graphe_biparti"
+      target="_blank" rel="noopener">Wikipédia</a></dd>
+
+      <dt>Projection (report / cut)</dt>
+      <dd>Vue « à un mode » obtenue en <b>contractant</b> les charnières : deux entités sont
+      reliées si elles partagent au moins une charnière, et le <b>poids</b> de l'arête compte
+      ces charnières communes. <span class="how">En mode <b>report</b>, masquer un type de
+      nœud reconstruit les liens entre ses voisins ; en mode <b>cut</b>, le lien
+      disparaît.</span></dd>
+
+      <dt>Pivot</dt>
+      <dd>L'entité autour de laquelle on (ré)organise ou centre la carte.</dd>
+
+      <dt>Focalisation (ego)</dt>
+      <dd>Restriction de la vue au voisinage immédiat d'un nœud (1 à 3 sauts). Le sous-graphe
+      est isolé et recentré, et <b>les centralités y sont recalculées localement</b> — elles
+      décrivent alors le rôle du nœud dans son entourage, pas dans tout le réseau.</dd>
+    </dl>
+
+    <h3>Mesures de centralité (l'importance d'un nœud)</h3>
+    <dl>
+      <dt>Degré</dt>
+      <dd>Nombre de liens directs du nœud dans la vue courante. <span class="how">Élevé =
+      entité reliée à beaucoup d'autres, qui collabore largement.</span> C'est la mesure par
+      défaut pour la <b>taille</b> des nœuds.<a class="ref" href="https://fr.wikipedia.org/wiki/Centralité"
+      target="_blank" rel="noopener">Wikipédia</a></dd>
+
+      <dt>Intermédiarité <i>(betweenness)</i></dt>
+      <dd>Proportion des plus courts chemins entre paires de nœuds qui <b>passent par</b> ce
+      nœud. <span class="how">Élevé = « passeur » qui relie des groupes éloignés ; le retirer
+      allongerait ou couperait des chemins, fragmentant le réseau.</span> Sur les grands
+      graphes, elle est estimée par échantillonnage de points de départ — de façon
+      <b>déterministe</b> (graine fixe), donc reproductible.<a class="ref"
+      href="https://fr.wikipedia.org/wiki/Centralité_intermédiaire" target="_blank" rel="noopener">Wikipédia</a></dd>
+
+      <dt>Vecteur propre <i>(eigenvector)</i></dt>
+      <dd>Importance <b>récursive</b> : un nœud est central s'il est relié à des nœuds
+      eux-mêmes centraux. <span class="how">Une centralité de « prestige » — être au contact
+      des pôles compte plus que multiplier les liens vers des nœuds périphériques.</span>
+      Mathématiquement, c'est la composante du nœud dans le vecteur propre principal de la
+      matrice d'adjacence (le PageRank en est une variante).<a class="ref"
+      href="https://fr.wikipedia.org/wiki/Centralité" target="_blank" rel="noopener">Wikipédia</a></dd>
+    </dl>
+    <p class="refs">Implémentation : <a class="ref" href="https://networkx.org/documentation/stable/reference/algorithms/centrality.html"
+    target="_blank" rel="noopener">networkx — centralité</a></p>
+
+    <h3>Structure d'ensemble</h3>
+    <dl>
+      <dt>Communauté</dt>
+      <dd>Groupe de nœuds plus densément reliés entre eux qu'avec le reste du réseau.
+      <span class="how">Détectées par l'algorithme de <b>Louvain</b>, qui maximise la
+      <i>modularité</i> — l'écart entre la densité interne observée et celle qu'on attendrait
+      d'un réseau au hasard.</span> Le calcul est déterministe ici. Le numéro de communauté est
+      un simple identifiant de groupe (pour la couleur), pas un classement.<a class="ref"
+      href="https://fr.wikipedia.org/wiki/Méthode_de_Louvain" target="_blank" rel="noopener">Louvain</a><a
+      class="ref" href="https://fr.wikipedia.org/wiki/Modularité_(réseaux)" target="_blank" rel="noopener">modularité</a></dd>
+
+      <dt>Densité</dt>
+      <dd>Proportion des liens possibles réellement présents. <span class="how">0 = aucun lien,
+      1 = tous les nœuds reliés deux à deux.</span> Dit si le réseau est lâche ou très
+      connecté.<a class="ref" href="https://fr.wikipedia.org/wiki/Densité_d'un_graphe"
+      target="_blank" rel="noopener">Wikipédia</a></dd>
+
+      <dt>Composantes connexes</dt>
+      <dd>Nombre de morceaux disjoints : des sous-ensembles entre lesquels il n'existe aucun
+      chemin. <span class="how">Plusieurs composantes = un réseau en îlots séparés.</span><a
+      class="ref" href="https://fr.wikipedia.org/wiki/Composante_connexe_(théorie_des_graphes)"
+      target="_blank" rel="noopener">Wikipédia</a></dd>
+
+      <dt>Degré moyen</dt>
+      <dd>Moyenne des degrés de tous les nœuds — une lecture globale de la connectivité.<a
+      class="ref" href="https://fr.wikipedia.org/wiki/Degré_(théorie_des_graphes)"
+      target="_blank" rel="noopener">Wikipédia</a></dd>
+    </dl>
+
+    <h3>Traits saillants</h3>
+    <p>Dans la page statistiques, un trait « ressort » par <b>écart aux pairs</b> : une valeur
+    se détache quand elle s'éloigne nettement de la médiane de son groupe (les entités du même
+    type). <span class="how">Ce critère est calculé à partir des <b>rôles</b> des colonnes,
+    jamais de leur nom — il vaut donc pour n'importe quel jeu de données et n'impose aucune
+    grille de lecture.</span></p>
+  </section>
+  </div>
+</main>
+
+<script>
+// Scrollspy : surligne dans le sommaire la section visible.
+(function(){
+  var links = Array.prototype.slice.call(document.querySelectorAll('.about-toc a'));
+  var byId = {};
+  links.forEach(function(a){ byId[a.getAttribute('href').slice(1)] = a; });
+  var secs = links.map(function(a){ return document.getElementById(a.getAttribute('href').slice(1)); })
+                  .filter(Boolean);
+  if(!('IntersectionObserver' in window) || !secs.length) return;
+  var visible = {};
+  function refresh(){
+    var current = null;
+    for(var i=0;i<secs.length;i++){ if(visible[secs[i].id]){ current = secs[i].id; break; } }
+    links.forEach(function(a){ a.classList.remove('active'); });
+    if(current && byId[current]) byId[current].classList.add('active');
+  }
+  var obs = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){ visible[e.target.id] = e.isIntersecting; });
+    refresh();
+  }, { rootMargin: '-20% 0px -70% 0px', threshold: 0 });
+  secs.forEach(function(s){ obs.observe(s); });
+})();
+</script>
+</body>
+</html>
